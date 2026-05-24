@@ -1,0 +1,7 @@
+players_names/correct_all.sql
+players_names/my_spell.ssp
+players_names/rejestr_czlonkow.csv
+players_names/correct_poland.sql
+.idea/
+.venv/
+__pycache__/

@@ -1,0 +1,3 @@
+[submodule "cpp/src/chess-library"]
+	path = cpp/src/chess-library
+	url = https://github.com/Disservin/chess-library.git

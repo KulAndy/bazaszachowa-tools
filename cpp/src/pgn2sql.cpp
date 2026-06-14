@@ -16,7 +16,7 @@ const bool validateDate(string_view date) {
   }
 
   for (size_t i = 0; i < 4; ++i) {
-    if (!std::isdigit(date[i])) {
+    if (!isdigit(date[i])) {
       return false;
     }
   }
@@ -27,8 +27,8 @@ const bool validateDate(string_view date) {
 class MyVisitor : public pgn::Visitor {
 public:
 public:
-  MyVisitor(std::ofstream &outFile, const std::string &tableName)
-      : outFile(outFile), tableName(tableName) {
+  MyVisitor(ofstream &outFile, const string &tableName)
+  : outFile(outFile), tableName(tableName) {
     cout << endl;
   }
 
@@ -40,7 +40,7 @@ public:
     movesStream.clear();
   }
 
-  void header(std::string_view key, std::string_view value) {
+  void header(string_view key, string_view value) {
     if (key == "Event") {
       event = value;
     } else if (key == "Site") {
@@ -82,14 +82,14 @@ public:
 
       if (m.typeOf() == Move::CASTLING) {
         switch (dest) {
-        case Square(Square::underlying::SQ_A1).index():
-        case Square(Square::underlying::SQ_A8).index():
-          dest += 2;
-          break;
-        case Square(Square::underlying::SQ_H1).index():
-        case Square(Square::underlying::SQ_H8).index():
-          dest--;
-          break;
+          case Square(Square::underlying::SQ_A1).index():
+          case Square(Square::underlying::SQ_A8).index():
+            dest += 2;
+            break;
+          case Square(Square::underlying::SQ_H1).index():
+          case Square(Square::underlying::SQ_H8).index():
+            dest--;
+            break;
         }
       }
 
@@ -100,11 +100,11 @@ public:
       }
 
       uint16_t packed = (static_cast<uint16_t>(src) << 10) |
-                        (static_cast<uint16_t>(dest) << 4) |
-                        (static_cast<uint16_t>(piece) & 0x07);
+      (static_cast<uint16_t>(dest) << 4) |
+      (static_cast<uint16_t>(piece) & 0x07);
 
       movesStream << static_cast<char>((packed >> 8) & 0xFF)
-                  << static_cast<char>(packed & 0xFF);
+      << static_cast<char>(packed & 0xFF);
       board.makeMove(m);
     } catch (exception &e) {
       cerr << "Error in move processing: " << e.what() << endl;
@@ -113,17 +113,17 @@ public:
 
   void endPgn() {
     outFile << "insert ignore into " << tableName
-            << " (moves_blob,Event,Site,Year,Month,Day,Round,White,Black,"
-               "Result,WhiteElo,BlackElo) values("
-            << "0x";
+    << " (moves_blob,Event,Site,Year,Month,Day,Round,White,Black,"
+    "Result,WhiteElo,BlackElo) values("
+    << "0x";
     for (unsigned char c : movesStream.str()) {
-      outFile << std::hex << std::setw(2) << std::setfill('0')
-              << static_cast<int>(c);
+      outFile << hex << setw(2) << setfill('0')
+      << static_cast<int>(c);
     }
-    outFile << std::dec;
+    outFile << dec;
 
     outFile << "," << "\"" << event << "\"" << "," << "\"" << site << "\""
-            << ",";
+    << ",";
     if (year.has_value()) {
       outFile << year.value();
     } else {
@@ -147,8 +147,8 @@ public:
     }
 
     outFile << "," << "\"" << round << "\"" << "," << "\"" << white << "\""
-            << "," << "\"" << black << "\"" << "," << "\"" << result << "\""
-            << ",";
+    << "," << "\"" << black << "\"" << "," << "\"" << result << "\""
+    << ",";
 
     if (whiteElo.has_value()) {
       outFile << whiteElo.value();
@@ -170,8 +170,8 @@ public:
   }
 
 protected:
-  std::ofstream &outFile;
-  std::string tableName;
+  ofstream &outFile;
+  string tableName;
   Board board;
   string event = "?";
   string site = "?";
@@ -188,19 +188,19 @@ protected:
   int counter = 0;
 
   void parseDateValue(string_view value) {
-    std::regex dateRegex(R"((\d+)(?:[^\d]+(\d+)(?:[^\d]+(\d+))?)?)");
-    std::smatch matches;
-    std::string valueStr(value);
+    regex dateRegex(R"((\d+)(?:[^\d]+(\d+)(?:[^\d]+(\d+))?)?)");
+    smatch matches;
+    string valueStr(value);
 
-    if (std::regex_search(valueStr, matches, dateRegex)) {
+    if (regex_search(valueStr, matches, dateRegex)) {
       try {
-        year = std::stoi(matches[1].str());
+        year = stoi(matches[1].str());
         if (matches.size() > 2 && !matches[2].str().empty()) {
-          month = std::stoi(matches[2].str());
+          month = stoi(matches[2].str());
         }
 
         if (matches.size() > 3 && !matches[3].str().empty()) {
-          day = std::stoi(matches[3].str());
+          day = stoi(matches[3].str());
         }
       } catch (...) {
       }
@@ -231,9 +231,21 @@ int main(int argc, char **argv) {
   auto vis = make_unique<MyVisitor>(outFile, target_table);
 
   ifstream file_stream(input_file);
-  pgn::StreamParser parser(file_stream);
-  parser.readGames(*vis);
-  cout << endl;
 
+  try {
+    pgn::StreamParser parser(file_stream);
+
+    const auto err = parser.readGames(*vis);
+
+    if (err) {
+      cerr << "PGN parse error: " << err.message() << '\n';
+      return 1;
+    }
+  } catch (const std::exception &e) {
+    cerr << "Exception: " << e.what() << '\n';
+    return 1;
+  }
+
+  cout << endl;
   return 0;
 }

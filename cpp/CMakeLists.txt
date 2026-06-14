@@ -23,6 +23,7 @@ link_directories("/usr/lib/x86_64-linux-gnu")
 add_executable(pgn2sql ${SOURCE_DIR}/pgn2sql.cpp)
 add_executable(lichess_classify ${SOURCE_DIR}/lichess_classify.cpp)
 add_executable(remote2pgn ${SOURCE_DIR}/remote2pgn.cpp)
+add_executable(prepare_pgn ${SOURCE_DIR}/prepare_pgn.cpp)
 
 target_include_directories(lichess_classify PRIVATE
     /usr/include/mysql

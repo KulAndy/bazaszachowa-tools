@@ -1,3 +1,4 @@
+import logging
 import re
 import sys
 import threading
@@ -6,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from mysql.connector import pooling
 
-from settings import SETTINGS
+from .settings import SETTINGS
 
 POOL_SIZE = 8
 db_pool = None
@@ -68,7 +69,7 @@ def fetch_game_details(table, ids):
 
 
 def process_year(year, table, lock, duplicates):
-    print(year)
+    logging.info(year)
     if year in unique_years:
         return
     try:
@@ -158,30 +159,25 @@ def process_year(year, table, lock, duplicates):
 
                 connection.commit()
             except Exception as e:
-                print(e)
+                logging.error(e)
             finally:
                 cursor.close()
                 connection.close()
             if local_duplicates > 0:
-                print(f"Year {year} duplicates: {local_duplicates}")
+                logging.info(f"Year {year} duplicates: {local_duplicates}")
         with lock:
             duplicates[0] += local_duplicates
             if local_duplicates == 0:
                 unique_years.add(year)
     except Exception as e:
-        print(traceback.format_exc())
-        print(f"Error processing year {year}: {str(e)}")
+        logging.error(traceback.format_exc())
+        logging.error(f"Error processing year {year}: {str(e)}")
 
 
-def main():
+def main(TABLE):
     global db_pool
     init_db_pool()
     try:
-        try:
-            TABLE = sys.argv[1]
-        except IndexError:
-            TABLE = "all"
-            # TABLE = "poland"
 
         connection = db_pool.get_connection()
         cursor = connection.cursor()
@@ -201,18 +197,24 @@ def main():
                 try:
                     future.result()
                 except Exception as e:
-                    print(traceback.format_exc())
-                    print(f"Error in processing: {str(e)}")
+                    logging.error(traceback.format_exc())
+                    logging.error(f"Error in processing: {str(e)}")
 
         if duplicates[0] > 0:
-            duplicates[0] += main()
+            duplicates[0] += main(TABLE)
 
         return duplicates[0]
     except Exception as e:
-        print(traceback.format_exc())
-        print(f"Error in main process: {str(e)}")
+        logging.error(traceback.format_exc())
+        logging.error(f"Error in main process: {str(e)}")
 
 
 if __name__ == "__main__":
-    duplicates = main()
-    print(f"Total duplicates processed: {duplicates}")
+    logging.basicConfig(level=logging.INFO)
+    try:
+        TABLE = sys.argv[1]
+    except IndexError:
+        TABLE = "all"
+        # TABLE = "poland"
+    duplicates = main(TABLE)
+    logging.info(f"Total duplicates processed: {duplicates}")

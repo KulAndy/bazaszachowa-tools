@@ -4,7 +4,7 @@ import unicodedata
 import mysql.connector
 from unidecode import unidecode
 
-from settings import SETTINGS
+from .settings import SETTINGS
 
 mydb = mysql.connector.connect(
     **SETTINGS["mysql"]

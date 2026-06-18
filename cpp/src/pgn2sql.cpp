@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <regex>
+#include <sstream>
 
 #include "chess-library/include/chess.hpp"
 
@@ -28,7 +29,7 @@ class MyVisitor : public pgn::Visitor {
 public:
 public:
   MyVisitor(ofstream &outFile, const string &tableName)
-  : outFile(outFile), tableName(tableName) {
+      : outFile(outFile), tableName(tableName) {
     cout << endl;
   }
 
@@ -82,14 +83,14 @@ public:
 
       if (m.typeOf() == Move::CASTLING) {
         switch (dest) {
-          case Square(Square::underlying::SQ_A1).index():
-          case Square(Square::underlying::SQ_A8).index():
-            dest += 2;
-            break;
-          case Square(Square::underlying::SQ_H1).index():
-          case Square(Square::underlying::SQ_H8).index():
-            dest--;
-            break;
+        case Square(Square::underlying::SQ_A1).index():
+        case Square(Square::underlying::SQ_A8).index():
+          dest += 2;
+          break;
+        case Square(Square::underlying::SQ_H1).index():
+        case Square(Square::underlying::SQ_H8).index():
+          dest--;
+          break;
         }
       }
 
@@ -100,11 +101,11 @@ public:
       }
 
       uint16_t packed = (static_cast<uint16_t>(src) << 10) |
-      (static_cast<uint16_t>(dest) << 4) |
-      (static_cast<uint16_t>(piece) & 0x07);
+                        (static_cast<uint16_t>(dest) << 4) |
+                        (static_cast<uint16_t>(piece) & 0x07);
 
       movesStream << static_cast<char>((packed >> 8) & 0xFF)
-      << static_cast<char>(packed & 0xFF);
+                  << static_cast<char>(packed & 0xFF);
       board.makeMove(m);
     } catch (exception &e) {
       cerr << "Error in move processing: " << e.what() << endl;
@@ -113,17 +114,16 @@ public:
 
   void endPgn() {
     outFile << "insert ignore into " << tableName
-    << " (moves_blob,Event,Site,Year,Month,Day,Round,White,Black,"
-    "Result,WhiteElo,BlackElo) values("
-    << "0x";
+            << " (moves_blob,Event,Site,Year,Month,Day,Round,White,Black,"
+               "Result,WhiteElo,BlackElo) values("
+            << "0x";
     for (unsigned char c : movesStream.str()) {
-      outFile << hex << setw(2) << setfill('0')
-      << static_cast<int>(c);
+      outFile << hex << setw(2) << setfill('0') << static_cast<int>(c);
     }
     outFile << dec;
 
     outFile << "," << "\"" << event << "\"" << "," << "\"" << site << "\""
-    << ",";
+            << ",";
     if (year.has_value()) {
       outFile << year.value();
     } else {
@@ -147,8 +147,8 @@ public:
     }
 
     outFile << "," << "\"" << round << "\"" << "," << "\"" << white << "\""
-    << "," << "\"" << black << "\"" << "," << "\"" << result << "\""
-    << ",";
+            << "," << "\"" << black << "\"" << "," << "\"" << result << "\""
+            << ",";
 
     if (whiteElo.has_value()) {
       outFile << whiteElo.value();

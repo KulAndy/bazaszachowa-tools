@@ -1,25 +1,22 @@
+#include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <iostream>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
-#include <cppconn/prepared_statement.h>
-#include <cppconn/resultset.h>
-#include <cppconn/statement.h>
-#include <mysql_connection.h>
-#include <mysql_driver.h>
-
 #include "mysql_settings.hpp"
+#include <mysql/mysql.h>
 
 using namespace std;
 
 constexpr int BATCH_SIZE = 1000;
-const unsigned int detected_threads = thread::hardware_concurrency();
-const unsigned int N_THREADS = max(2u, detected_threads) - 1;
+
+const int detected_threads = thread::hardware_concurrency();
+const int N_THREADS = max(2, detected_threads) - 1;
 
 struct EcoLine {
   int id;
@@ -28,117 +25,183 @@ struct EcoLine {
 
 void classify_worker(const string &table, const vector<EcoLine> &eco_lines,
                      int start_id, int end_id, atomic<int> &total_updated) {
-  try {
-    sql::mysql::MySQL_Driver *driver = sql::mysql::get_mysql_driver_instance();
-    unique_ptr<sql::Connection> conn(
-        driver->connect(mysql_host, mysql_user, mysql_password));
-    conn->setSchema(database);
+  MYSQL *conn = mysql_init(nullptr);
+  if (!conn) {
+    cerr << "mysql_init failed\n";
+    return;
+  }
 
-    int last_id = start_id;
+  if (!mysql_real_connect(conn, mysql_host, mysql_user, mysql_password,
+                          database, 0, nullptr, 0)) {
+    cerr << "Connection error: " << mysql_error(conn) << "\n";
+    mysql_close(conn);
+    return;
+  }
 
-    while (last_id < end_id) {
-      unique_ptr<sql::PreparedStatement> pstmt(
-          conn->prepareStatement("SELECT id, moves_blob FROM " + table +
-                                 " WHERE id >= ? AND id < ? AND ecoID IS NULL "
-                                 "ORDER BY id ASC LIMIT ?"));
-      pstmt->setInt(1, last_id);
-      pstmt->setInt(2, end_id);
-      pstmt->setInt(3, BATCH_SIZE);
+  int last_id = start_id;
+  char query[1024];
 
-      unique_ptr<sql::ResultSet> games(pstmt->executeQuery());
+  while (last_id < end_id) {
 
-      vector<pair<int, int>> updates;
+    snprintf(query, sizeof(query),
+             "SELECT id, moves_blob FROM %s "
+             "WHERE id >= %d AND id < %d AND ecoID IS NULL "
+             "ORDER BY id ASC LIMIT %d",
+             table.c_str(), last_id, end_id, BATCH_SIZE);
 
-      while (games->next()) {
-        int game_id = games->getInt("id");
-        last_id = game_id;
-        string moves_blob = games->getString("moves_blob");
+    if (mysql_query(conn, query)) {
+      cerr << "Query error: " << mysql_error(conn) << "\n";
+      break;
+    }
 
-        for (const auto &eco : eco_lines) {
-          if (moves_blob.rfind(eco.uci, 0) == 0) { // starts with
-            updates.emplace_back(eco.id, game_id);
-            break;
-          }
+    MYSQL_RES *result = mysql_store_result(conn);
+    if (!result) {
+      cerr << "Store result error: " << mysql_error(conn) << "\n";
+      break;
+    }
+
+    vector<pair<int, int>> updates;
+    MYSQL_ROW row;
+
+    while ((row = mysql_fetch_row(result))) {
+
+      if (!row[0])
+        continue;
+
+      int game_id = atoi(row[0]);
+      last_id = game_id;
+
+      const char *moves_cstr = row[1];
+      if (!moves_cstr) {
+        moves_cstr = "";
+      }
+
+      string moves_blob(moves_cstr);
+
+      for (const auto &eco : eco_lines) {
+        if (moves_blob.rfind(eco.uci, 0) == 0) {
+          updates.emplace_back(eco.id, game_id);
+          break;
         }
       }
-
-      if (updates.empty())
-        break;
-
-      unique_ptr<sql::PreparedStatement> update_stmt(conn->prepareStatement(
-          "UPDATE " + table + " SET ecoID = ? WHERE id = ?"));
-
-      for (const auto &upd : updates) {
-        update_stmt->setInt(1, upd.first);
-        update_stmt->setInt(2, upd.second);
-        update_stmt->executeUpdate();
-      }
-
-      total_updated += updates.size();
-
-      if (updates.size() < BATCH_SIZE)
-        break;
     }
-  } catch (sql::SQLException &e) {
-    cerr << "[Thread " << this_thread::get_id() << "] SQL error: " << e.what()
-         << endl;
+
+    mysql_free_result(result);
+
+    if (updates.empty())
+      break;
+
+    for (const auto &upd : updates) {
+      char q[256];
+      snprintf(q, sizeof(q), "UPDATE %s SET ecoID = %d WHERE id = %d",
+               table.c_str(), upd.first, upd.second);
+
+      if (mysql_query(conn, q)) {
+        cerr << "Update error: " << mysql_error(conn) << "\n";
+      }
+    }
+
+    total_updated += updates.size();
+
+    if (updates.size() < BATCH_SIZE)
+      break;
   }
+
+  mysql_close(conn);
 }
 
 int main(int argc, char *argv[]) {
   string table = "all_games";
-  if (argc > 1) {
+  if (argc > 1)
     table = argv[1];
-  }
-  cout << "Using table: " << table << endl;
 
-  try {
-    sql::mysql::MySQL_Driver *driver = sql::mysql::get_mysql_driver_instance();
-    unique_ptr<sql::Connection> conn(
-        driver->connect(mysql_host, mysql_user, mysql_password));
-    conn->setSchema(database);
+  cout << "Using table: " << table << "\n";
 
-    unique_ptr<sql::Statement> stmt(conn->createStatement());
-    unique_ptr<sql::ResultSet> res(
-        stmt->executeQuery("SELECT id, uci FROM eco WHERE uci IS NOT NULL "
-                           "ORDER BY LENGTH(uci) DESC"));
+  MYSQL *conn = mysql_init(nullptr);
+  if (!conn)
+    return 1;
 
-    vector<EcoLine> eco_lines;
-    while (res->next()) {
-      eco_lines.push_back(EcoLine{res->getInt("id"), res->getString("uci")});
-    }
-
-    unique_ptr<sql::ResultSet> min_max(
-        stmt->executeQuery("SELECT MIN(id) AS min_id, MAX(id) AS max_id FROM " +
-                           table + " WHERE ecoID IS NULL"));
-    int min_id = 0, max_id = 0;
-    if (min_max->next()) {
-      min_id = min_max->getInt("min_id");
-      max_id = min_max->getInt("max_id");
-    }
-
-    int total_range = max_id - min_id + 1;
-    int chunk_size = (total_range + N_THREADS - 1) / N_THREADS;
-
-    vector<thread> threads;
-    atomic<int> total_updated = 0;
-
-    for (int i = 0; i < N_THREADS; ++i) {
-      int start_id = min_id + i * chunk_size;
-      int end_id = min(min_id + (i + 1) * chunk_size - 1, max_id);
-      threads.emplace_back(classify_worker, table, cref(eco_lines), start_id,
-                           end_id + 1, ref(total_updated));
-    }
-
-    for (auto &t : threads)
-      t.join();
-
-    cout << "Classification complete. Total updated: " << total_updated << endl;
-
-  } catch (sql::SQLException &e) {
-    cerr << "SQL error: " << e.what() << endl;
+  if (!mysql_real_connect(conn, mysql_host, mysql_user, mysql_password,
+                          database, 0, nullptr, 0)) {
+    cerr << mysql_error(conn) << "\n";
+    mysql_close(conn);
     return 1;
   }
+
+  if (mysql_query(conn, "SELECT id, uci FROM eco WHERE uci IS NOT NULL ORDER "
+                        "BY LENGTH(uci) DESC")) {
+    cerr << mysql_error(conn) << "\n";
+    mysql_close(conn);
+    return 1;
+  }
+
+  MYSQL_RES *res = mysql_store_result(conn);
+  if (!res) {
+    cerr << mysql_error(conn) << "\n";
+    mysql_close(conn);
+    return 1;
+  }
+
+  vector<EcoLine> eco_lines;
+  MYSQL_ROW row;
+
+  while ((row = mysql_fetch_row(res))) {
+    if (!row[0] || !row[1])
+      continue;
+
+    eco_lines.push_back({atoi(row[0]), string(row[1])});
+  }
+
+  mysql_free_result(res);
+
+  char minmax[256];
+  snprintf(minmax, sizeof(minmax),
+           "SELECT MIN(id), MAX(id) FROM %s WHERE ecoID IS NULL",
+           table.c_str());
+
+  if (mysql_query(conn, minmax)) {
+    cerr << mysql_error(conn) << "\n";
+    mysql_close(conn);
+    return 1;
+  }
+
+  res = mysql_store_result(conn);
+  if (!res) {
+    cerr << mysql_error(conn) << "\n";
+    mysql_close(conn);
+    return 1;
+  }
+
+  int min_id = 0, max_id = 0;
+
+  if ((row = mysql_fetch_row(res))) {
+    if (row[0])
+      min_id = atoi(row[0]);
+    if (row[1])
+      max_id = atoi(row[1]);
+  }
+
+  mysql_free_result(res);
+  mysql_close(conn);
+
+  int total_range = max_id - min_id + 1;
+  int chunk_size = (total_range + N_THREADS - 1) / N_THREADS;
+
+  vector<thread> threads;
+  atomic<int> total_updated = 0;
+
+  for (int i = 0; i < N_THREADS; ++i) {
+    int start_id = min_id + i * chunk_size;
+    int end_id = min(min_id + (i + 1) * chunk_size - 1, max_id);
+
+    threads.emplace_back(classify_worker, table, cref(eco_lines), start_id,
+                         end_id + 1, ref(total_updated));
+  }
+
+  for (auto &t : threads)
+    t.join();
+
+  cout << "Done. Updated: " << total_updated << "\n";
 
   return 0;
 }

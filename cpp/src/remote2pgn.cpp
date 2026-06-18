@@ -1,15 +1,11 @@
 #include "chess-library/include/chess.hpp"
 #include "mysql_settings.hpp"
 #include <condition_variable>
-#include <cppconn/prepared_statement.h>
-#include <cppconn/resultset.h>
-#include <cppconn/statement.h>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <mysql_connection.h>
-#include <mysql_driver.h>
+#include <mysql/mysql.h>
 #include <queue>
 #include <set>
 #include <sstream>
@@ -117,89 +113,187 @@ void processBatch(vector<GameData> &&games, const string &year) {
 }
 
 void processYear(const string table, const string &year) {
-  try {
-    sql::mysql::MySQL_Driver *driver = sql::mysql::get_mysql_driver_instance();
-    unique_ptr<sql::Connection> con(
-        driver->connect(mysql_host, mysql_user, mysql_password));
-    con->setSchema(database);
-
-    const int batchSize = 1000;
-    int offset = 0;
-    bool moreRows = true;
-
-    while (moreRows) {
-      try {
-        unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
-            "SELECT chess_events.name, sites.site, `Year`, `Month`, `Day`, "
-            "`Round`, "
-            "p1.fullname, p2.fullname, `Result`, `WhiteElo`, `BlackElo`, "
-            "eco.ECO, `moves_blob` "
-            "FROM `" +
-            table +
-            "` "
-            "LEFT JOIN chess_events ON eventID = chess_events.id "
-            "LEFT JOIN sites ON siteID = sites.id "
-            "LEFT JOIN players AS p1 ON WhiteID = p1.id "
-            "LEFT JOIN players AS p2 ON BlackID = p2.id "
-            "LEFT JOIN eco ON ecoID = eco.id "
-            "WHERE `Year` = ? LIMIT ? OFFSET ?"));
-
-        pstmt->setString(1, year);
-        pstmt->setInt(2, batchSize);
-        pstmt->setInt(3, offset);
-
-        unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
-
-        vector<GameData> batchGames;
-        moreRows = false;
-
-        while (res->next()) {
-          moreRows = true;
-          GameData game;
-          game.event = res->isNull(1) ? "" : res->getString(1);
-          game.site = res->isNull(2) ? "" : res->getString(2);
-          string year = res->isNull(3) ? "" : res->getString(3);
-          string month = res->isNull(4) ? "" : res->getString(4);
-          string day = res->isNull(5) ? "" : res->getString(5);
-          game.date = buildDate(year, month, day);
-          game.round = res->isNull(6) ? "" : res->getString(6);
-          game.white = res->isNull(7) ? "" : res->getString(7);
-          game.black = res->isNull(8) ? "" : res->getString(8);
-          game.result = res->isNull(9) ? "" : res->getString(9);
-          game.whiteElo = res->isNull(10) ? "" : res->getString(10);
-          game.blackElo = res->isNull(11) ? "" : res->getString(11);
-          game.eco = res->isNull(12) ? "" : res->getString(12);
-          game.movesBlob = res->isNull(13) ? "" : res->getString(13);
-          batchGames.push_back(move(game));
-        }
-
-        if (!batchGames.empty()) {
-          processBatch(move(batchGames), year);
-        }
-
-        offset += batchSize;
-      } catch (const sql::SQLException &e) {
-        if (string(e.what()).find("needs to be re-prepared") != string::npos) {
-          cerr << "Retrying to prepare statement for year " << year << ": "
-               << e.what() << endl;
-          continue;
-        } else {
-          cerr << "SQL Error in thread for year " << year << ": " << e.what()
-               << endl;
-          break;
-        }
-      } catch (const exception &e) {
-        cerr << "Error in thread for year " << year << ": " << e.what() << endl;
-        break;
-      }
-    }
-  } catch (const sql::SQLException &e) {
-    cerr << "SQL Error in thread for year " << year << ": " << e.what() << endl;
-  } catch (const exception &e) {
-    cerr << "Error in thread for year " << year << ": " << e.what() << endl;
+  MYSQL *conn = mysql_init(nullptr);
+  if (!conn) {
+    cerr << "mysql_init failed\n";
+    return;
   }
-}
 
+  if (!mysql_real_connect(conn, mysql_host, mysql_user, mysql_password,
+                          database, 0, nullptr, 0)) {
+    cerr << "Connection error: " << mysql_error(conn) << "\n";
+    mysql_close(conn);
+    return;
+  }
+
+  string query =
+      "SELECT chess_events.name, sites.site, `Year`, `Month`, `Day`, "
+      "`Round`, "
+      "p1.fullname, p2.fullname, `Result`, `WhiteElo`, `BlackElo`, "
+      "eco.ECO, `moves_blob` "
+      "FROM `" +
+      table +
+      "` "
+      "LEFT JOIN chess_events ON eventID = chess_events.id "
+      "LEFT JOIN sites ON siteID = sites.id "
+      "LEFT JOIN players AS p1 ON WhiteID = p1.id "
+      "LEFT JOIN players AS p2 ON BlackID = p2.id "
+      "LEFT JOIN eco ON ecoID = eco.id "
+      "WHERE `Year` = ? LIMIT ? OFFSET ?";
+
+  MYSQL_STMT *stmt = mysql_stmt_init(conn);
+  if (!stmt) {
+    cerr << "mysql_stmt_init failed: " << mysql_error(conn) << "\n";
+    mysql_close(conn);
+    return;
+  }
+
+  if (mysql_stmt_prepare(stmt, query.c_str(), query.size())) {
+    cerr << "mysql_stmt_prepare failed: " << mysql_stmt_error(stmt) << "\n";
+    mysql_stmt_close(stmt);
+    mysql_close(conn);
+    return;
+  }
+
+  MYSQL_BIND param[3];
+  memset(param, 0, sizeof(param));
+
+  string year_str = year;
+  param[0].buffer_type = MYSQL_TYPE_STRING;
+  param[0].buffer = (void *)year_str.c_str();
+  param[0].buffer_length = year_str.size();
+  param[0].is_null = 0;
+  param[0].length = &param[0].buffer_length;
+
+  int batchSize = 1000;
+  param[1].buffer_type = MYSQL_TYPE_LONG;
+  param[1].buffer = (void *)&batchSize;
+  param[1].is_null = 0;
+  param[1].length = nullptr;
+
+  int offset = 0;
+  param[2].buffer_type = MYSQL_TYPE_LONG;
+  param[2].buffer = (void *)&offset;
+  param[2].is_null = 0;
+  param[2].length = nullptr;
+
+  if (mysql_stmt_bind_param(stmt, param)) {
+    cerr << "mysql_stmt_bind_param failed: " << mysql_stmt_error(stmt) << "\n";
+    mysql_stmt_close(stmt);
+    mysql_close(conn);
+    return;
+  }
+
+  bool moreRows = true;
+  while (moreRows) {
+    moreRows = false;
+
+    param[2].buffer = (void *)&offset;
+
+    if (mysql_stmt_execute(stmt)) {
+      cerr << "mysql_stmt_execute failed: " << mysql_stmt_error(stmt) << "\n";
+      break;
+    }
+
+    MYSQL_RES *result = mysql_stmt_result_metadata(stmt);
+    if (!result) {
+      cerr << "mysql_stmt_result_metadata failed: " << mysql_stmt_error(stmt)
+           << "\n";
+      break;
+    }
+
+    MYSQL_BIND bind[13];
+    memset(bind, 0, sizeof(bind));
+
+    char *buffers[13];
+    unsigned long lengths[13];
+    int num_fields = mysql_num_fields(result);
+
+    for (int i = 0; i < num_fields; ++i) {
+      buffers[i] = new char[1024];
+      lengths[i] = 1024;
+      bind[i].buffer_type = MYSQL_TYPE_STRING;
+      bind[i].buffer = buffers[i];
+      bind[i].buffer_length = 1024;
+      bind[i].length = &lengths[i];
+      bind[i].is_null = new bool;
+      *(bind[i].is_null) = 0;
+    }
+
+    if (mysql_stmt_bind_result(stmt, bind)) {
+      cerr << "mysql_stmt_bind_result failed: " << mysql_stmt_error(stmt)
+           << "\n";
+      mysql_free_result(result);
+      for (int i = 0; i < num_fields; ++i) {
+        delete[] buffers[i];
+        delete bind[i].is_null;
+      }
+      break;
+    }
+
+    vector<GameData> batchGames;
+    while (!mysql_stmt_fetch(stmt)) {
+      moreRows = true;
+      GameData game;
+      game.event = bind[0].is_null && *(bind[0].is_null)
+                       ? ""
+                       : string(buffers[0], lengths[0]);
+      game.site = bind[1].is_null && *(bind[1].is_null)
+                      ? ""
+                      : string(buffers[1], lengths[1]);
+      string year = bind[2].is_null && *(bind[2].is_null)
+                        ? ""
+                        : string(buffers[2], lengths[2]);
+      string month = bind[3].is_null && *(bind[3].is_null)
+                         ? ""
+                         : string(buffers[3], lengths[3]);
+      string day = bind[4].is_null && *(bind[4].is_null)
+                       ? ""
+                       : string(buffers[4], lengths[4]);
+      game.date = buildDate(year, month, day);
+      game.round = bind[5].is_null && *(bind[5].is_null)
+                       ? ""
+                       : string(buffers[5], lengths[5]);
+      game.white = bind[6].is_null && *(bind[6].is_null)
+                       ? ""
+                       : string(buffers[6], lengths[6]);
+      game.black = bind[7].is_null && *(bind[7].is_null)
+                       ? ""
+                       : string(buffers[7], lengths[7]);
+      game.result = bind[8].is_null && *(bind[8].is_null)
+                        ? ""
+                        : string(buffers[8], lengths[8]);
+      game.whiteElo = bind[9].is_null && *(bind[9].is_null)
+                          ? ""
+                          : string(buffers[9], lengths[9]);
+      game.blackElo = bind[10].is_null && *(bind[10].is_null)
+                          ? ""
+                          : string(buffers[10], lengths[10]);
+      game.eco = bind[11].is_null && *(bind[11].is_null)
+                     ? ""
+                     : string(buffers[11], lengths[11]);
+      game.movesBlob = bind[12].is_null && *(bind[12].is_null)
+                           ? ""
+                           : string(buffers[12], lengths[12]);
+      batchGames.push_back(move(game));
+    }
+
+    mysql_free_result(result);
+    for (int i = 0; i < num_fields; ++i) {
+      delete[] buffers[i];
+      delete bind[i].is_null;
+    }
+
+    if (!batchGames.empty()) {
+      processBatch(move(batchGames), year);
+    }
+
+    offset += batchSize;
+  }
+
+  mysql_stmt_close(stmt);
+  mysql_close(conn);
+}
 int main(int argc, char *argv[]) {
   string table = "all_games";
   if (argc > 1) {
@@ -207,51 +301,65 @@ int main(int argc, char *argv[]) {
   }
   cout << "Using table: " << table << endl;
 
-  try {
-    sql::mysql::MySQL_Driver *driver = sql::mysql::get_mysql_driver_instance();
-    unique_ptr<sql::Connection> con(
-        driver->connect(mysql_host, mysql_user, mysql_password));
-    con->setSchema(database);
-
-    unique_ptr<sql::Statement> stmt(con->createStatement());
-    unique_ptr<sql::ResultSet> yearsRes(
-        stmt->executeQuery("SELECT DISTINCT `Year` FROM `" + table +
-                           "` WHERE `Year` IS NOT NULL"));
-
-    set<string> years;
-    while (yearsRes->next()) {
-      years.insert(yearsRes->getString(1));
-    }
-
-    vector<thread> workers;
-    workers.reserve(N_THREADS);
-
-    for (const auto &year : years) {
-      if (workers.size() >= N_THREADS) {
-        for (auto &t : workers) {
-          if (t.joinable()) {
-            t.join();
-          }
-        }
-        workers.clear();
-      }
-      workers.emplace_back(processYear, table, year);
-    }
-
-    for (auto &t : workers) {
-      if (t.joinable()) {
-        t.join();
-      }
-    }
-
-    cout << "All games processed." << endl;
-  } catch (const sql::SQLException &e) {
-    cerr << "SQL Error: " << e.what() << endl;
-    return 1;
-  } catch (const exception &e) {
-    cerr << "Error: " << e.what() << endl;
+  MYSQL *conn = mysql_init(nullptr);
+  if (!conn) {
+    cerr << "mysql_init failed\n";
     return 1;
   }
 
+  if (!mysql_real_connect(conn, mysql_host, mysql_user, mysql_password,
+                          database, 0, nullptr, 0)) {
+    cerr << "Connection error: " << mysql_error(conn) << "\n";
+    mysql_close(conn);
+    return 1;
+  }
+
+  string query =
+      "SELECT DISTINCT `Year` FROM `" + table + "` WHERE `Year` IS NOT NULL";
+  if (mysql_query(conn, query.c_str())) {
+    cerr << "Query error: " << mysql_error(conn) << "\n";
+    mysql_close(conn);
+    return 1;
+  }
+
+  MYSQL_RES *result = mysql_store_result(conn);
+  if (!result) {
+    cerr << "Store result error: " << mysql_error(conn) << "\n";
+    mysql_close(conn);
+    return 1;
+  }
+
+  set<string> years;
+  MYSQL_ROW row;
+  while ((row = mysql_fetch_row(result))) {
+    if (row[0]) {
+      years.insert(row[0]);
+    }
+  }
+  mysql_free_result(result);
+  mysql_close(conn);
+
+  vector<thread> workers;
+  workers.reserve(N_THREADS);
+
+  for (const auto &year : years) {
+    if (workers.size() >= N_THREADS) {
+      for (auto &t : workers) {
+        if (t.joinable()) {
+          t.join();
+        }
+      }
+      workers.clear();
+    }
+    workers.emplace_back(processYear, table, year);
+  }
+
+  for (auto &t : workers) {
+    if (t.joinable()) {
+      t.join();
+    }
+  }
+
+  cout << "All games processed." << endl;
   return 0;
 }

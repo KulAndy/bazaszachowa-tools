@@ -7,7 +7,8 @@ from bs4 import BeautifulSoup
 from dateutil.relativedelta import relativedelta
 from playwright.sync_api import sync_playwright
 from pymongo import MongoClient
-from settings import SETTINGS
+from ..settings import SETTINGS
+
 
 MONGO_URI = (
     f"mongodb://{quote_plus(SETTINGS['mongo']['user'])}:"
@@ -22,212 +23,6 @@ coll = db[MONGO_COLLECTION]
 today = date.today().replace(day=1)
 two_months_ago = today - relativedelta(months=2)
 
-FEDERATIONS = [
-    "AFG",
-    "ALB",
-    "ALG",
-    "AND",
-    "ANG",
-    "ANT",
-    "ARG",
-    "ARM",
-    "ARU",
-    "AUS",
-    "AUT",
-    "AZE",
-    "BAH",
-    "BRN",
-    "BAN",
-    "BAR",
-    "BLR",
-    "BEL",
-    "BIZ",
-    "BER",
-    "BHU",
-    "BOL",
-    "BIH",
-    "BOT",
-    "BRA",
-    "IVB",
-    "BRU",
-    "BUL",
-    "BUR",
-    "BDI",
-    "CAM",
-    "CMR",
-    "CAN",
-    "CPV",
-    "CAY",
-    "CAF",
-    "CHA",
-    "CHI",
-    "CHN",
-    "TPE",
-    "COL",
-    "COM",
-    "CRC",
-    "CIV",
-    "CRO",
-    "CUB",
-    "CYP",
-    "CZE",
-    "COD",
-    "DEN",
-    "DJI",
-    "DMA",
-    "DOM",
-    "ECU",
-    "EGY",
-    "ESA",
-    "ENG",
-    "GEQ",
-    "ERI",
-    "EST",
-    "SWZ",
-    "ETH",
-    "FAI",
-    "FIJ",
-    "FIN",
-    "FRA",
-    "GAB",
-    "GAM",
-    "GEO",
-    "GER",
-    "GHA",
-    "GRE",
-    "GRL",
-    "GRN",
-    "GUM",
-    "GUA",
-    "GCI",
-    "GUY",
-    "HAI",
-    "HON",
-    "HKG",
-    "HUN",
-    "ISL",
-    "IND",
-    "INA",
-    "IRI",
-    "IRQ",
-    "IRL",
-    "IOM",
-    "ISR",
-    "ITA",
-    "JAM",
-    "JPN",
-    "JCI",
-    "JOR",
-    "KAZ",
-    "KEN",
-    "KOS",
-    "KUW",
-    "KGZ",
-    "LAO",
-    "LAT",
-    "LBN",
-    "LES",
-    "LBR",
-    "LBA",
-    "LIE",
-    "LTU",
-    "LUX",
-    "MAC",
-    "MAD",
-    "MAW",
-    "MAS",
-    "MDV",
-    "MLI",
-    "MLT",
-    "MTN",
-    "MRI",
-    "MEX",
-    "MDA",
-    "MNC",
-    "MGL",
-    "MNE",
-    "MAR",
-    "MOZ",
-    "MYA",
-    "NAM",
-    "NRU",
-    "NEP",
-    "NED",
-    "AHO",
-    "NCL",
-    "NZL",
-    "NCA",
-    "NIG",
-    "NGR",
-    "MKD",
-    "NOR",
-    "OMA",
-    "PAK",
-    "PLW",
-    "PLE",
-    "PAN",
-    "PNG",
-    "PAR",
-    "PER",
-    "PHI",
-    "POL",
-    "POR",
-    "PUR",
-    "QAT",
-    "ROU",
-    "RUS",
-    "RWA",
-    "SKN",
-    "LCA",
-    "VIN",
-    "SMR",
-    "STP",
-    "KSA",
-    "SCO",
-    "SEN",
-    "SRB",
-    "SEY",
-    "SLE",
-    "SGP",
-    "SVK",
-    "SLO",
-    "SOL",
-    "SOM",
-    "RSA",
-    "KOR",
-    "SSD",
-    "ESP",
-    "SRI",
-    "SUD",
-    "SUR",
-    "SWE",
-    "SUI",
-    "SYR",
-    "TJK",
-    "TAN",
-    "THA",
-    "TLS",
-    "TOG",
-    "TGA",
-    "TTO",
-    "TUN",
-    "TUR",
-    "TKM",
-    "UGA",
-    "UKR",
-    "UAE",
-    "USA",
-    "URU",
-    "ISV",
-    "UZB",
-    "VAN",
-    "VEN",
-    "VIE",
-    "WLS",
-    "YEM",
-    "ZAM",
-    "ZIM"
-]
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -242,6 +37,29 @@ HEADERS = {
 }
 EVENT_RE = re.compile(r"/report\.phtml\?event=(\d+)")
 TIMEOUT = 15
+
+
+def get_federations():
+    url = "https://ratings.fide.com/rated_tournaments.phtml"
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(url, wait_until="networkidle")
+        html = page.content()
+        browser.close()
+
+    soup = BeautifulSoup(html, "html.parser")
+    select = soup.select_one("#select_country")
+
+    if not select:
+        raise RuntimeError("select#select_country not found")
+
+    return [
+        opt.get("value").strip()
+        for opt in select.select("option")
+        if opt.get("value", "").strip()
+    ]
 
 
 def get_tournaments_in_base(country):
@@ -320,7 +138,6 @@ def scrap_country_period(country, period):
                 match = EVENT_RE.search(href)
                 if match:
                     event_id = match.group(1)
-
             else:
                 data.append(col.get_text(strip=True))
 
@@ -328,7 +145,11 @@ def scrap_country_period(country, period):
             print("|".join(data + [event_id]))
             if int(event_id) not in IMPORTED_TOURNAMENTS:
                 name, city, system, start, received = data
-                start_date = datetime.strptime(start, "%d.%m.%Y").date()
+                try:
+                    start_date = datetime.strptime(start, "%d.%m.%Y").date()
+                except ValueError:
+                    start_date = datetime.strptime(start, "%Y.%m.%d").date()
+
                 coll.update_one(
                     {"_id": int(event_id)},
                     {"$set": {"country": country, "name": name, "start": start_date}},
@@ -378,6 +199,8 @@ def get_available_periods(country):
 
 
 if __name__ == "__main__":
+    FEDERATIONS = get_federations()
+
     for federation in FEDERATIONS:
         try:
             dates = get_available_periods(federation)

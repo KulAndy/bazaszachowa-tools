@@ -1,5 +1,5 @@
 import csv
-import re
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import mysql.connector
@@ -11,11 +11,40 @@ CSV_PATH = "./rejestr_czlonkow.csv"
 CSV_ENCODING = "ISO-8859-2"
 CSV_DELIMITER = ","
 
-punctuation_pattern = re.compile(r"[^\w]+", re.UNICODE)
+thread_local = threading.local()
+
+
+def get_connection():
+    if not hasattr(thread_local, "conn"):
+        thread_local.conn = mysql.connector.connect(**SETTINGS["mysql"])
+        thread_local.cur = thread_local.conn.cursor()
+
+    return thread_local.conn, thread_local.cur
+
+
+def normalize_key(name: str) -> str:
+    return unidecode(
+        name.replace(",", "")
+            .strip()
+            .lower()
+    )
+
+
+def normalize_csv_name(raw_name: str) -> str:
+    raw_name = raw_name.strip()
+
+    parts = raw_name.split()
+    if len(parts) < 2:
+        return unidecode(raw_name.title())
+
+    lastname = parts[0].capitalize()
+    firstname = " ".join(p.capitalize() for p in parts[1:])
+
+    return unidecode(f"{lastname}, {firstname}")
 
 
 def load_member_registry():
-    registry = set()
+    registry = {}
 
     with open(CSV_PATH, "r", encoding=CSV_ENCODING, newline="") as f:
         reader = csv.DictReader(f, delimiter=CSV_DELIMITER)
@@ -24,24 +53,11 @@ def load_member_registry():
             if not raw_name:
                 continue
 
-            normalized = normalize_csv_name(raw_name)
-            registry.add(normalized)
+            canonical = normalize_csv_name(raw_name)
+            registry[normalize_key(canonical)] = canonical
 
     print(f"Loaded {len(registry)} names from registry.")
     return registry
-
-
-def normalize_csv_name(raw_name: str) -> str:
-    raw_name = raw_name.strip()
-    parts = raw_name.split()
-    if len(parts) < 2:
-        return unidecode(raw_name.title())
-
-    lastname = parts[0].capitalize()
-    firstname = " ".join(p.capitalize() for p in parts[1:])
-    unified = f"{lastname}, {firstname}"
-
-    return unidecode(unified)
 
 
 def fetch_fullnames():
@@ -60,34 +76,21 @@ def fetch_fullnames():
     return names
 
 
-def process_fullname(fullname: str, registry: set):
-    conn = None
-    cur = None
+def find_matching_name(name: str, registry: dict) -> str | None:
+    return registry.get(normalize_key(name))
+
+
+def process_fullname(fullname: str, registry: dict):
     try:
-        conn = mysql.connector.connect(**SETTINGS["mysql"])
-        cur = conn.cursor()
+        conn, cur = get_connection()
+        parts = fullname.replace(",", " ").split()
 
-        parts = re.split(r"[\s,]+", fullname.strip())
-        if len(parts) < 2:
-            return
-
-        unified = find_matching_name(fullname, registry)
-        if unified:
-            if unified != fullname and unified.lower() != fullname.lower():
-                print(f"|{fullname}| > |{unified}|")
-                cur.execute(
-                    "INSERT IGNORE INTO subtitutions (fullname, substitute) VALUES (%s, %s)",
-                    (unified, fullname)
-                )
-                conn.commit()
-            return
-
-        for i in range(1, len(parts)):
+        for i in range(len(parts)):
             rotated = " ".join(parts[i:] + parts[:i])
             unified = find_matching_name(rotated, registry)
             if unified:
-                if unified != fullname and unified.lower() != fullname.lower():
-                    print(f"|{fullname}| > |{unified}|")
+                if unified.lower() != fullname.lower():
+                    print(f"|{fullname}| -> |{unified}|")
                     cur.execute(
                         "INSERT IGNORE INTO subtitutions (fullname, substitute) VALUES (%s, %s)",
                         (unified, fullname)
@@ -98,20 +101,13 @@ def process_fullname(fullname: str, registry: set):
     except Exception as e:
         print(f"[ERROR] {fullname}: {e}")
 
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
 
+def close_thread_connection():
+    if hasattr(thread_local, "cur"):
+        thread_local.cur.close()
 
-def find_matching_name(name: str, registry: set) -> str | None:
-    normalized = unidecode(name.replace(",", "").strip().title())
-
-    for reg_name in registry:
-        if normalized.replace(",", "").lower() == reg_name.replace(",", "").lower():
-            return reg_name
-    return None
+    if hasattr(thread_local, "conn"):
+        thread_local.conn.close()
 
 
 if __name__ == "__main__":
@@ -123,3 +119,5 @@ if __name__ == "__main__":
         futures = [executor.submit(process_fullname, name, registry) for name in fullnames]
         for future in as_completed(futures):
             future.result()
+
+    close_thread_connection()

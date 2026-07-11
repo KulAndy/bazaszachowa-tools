@@ -54,19 +54,35 @@ def process_fullname(fullname):
                     conn.commit()
             return
 
+        fulltext_name = " ".join(map(
+            lambda x: f"+{x}",
+            filter(
+                lambda x: len(x) > 1,
+                map(
+                    lambda x: re.sub(r"[^\d\sa-z]", "", x.strip()),
+                    parts
+                )
+            ),
+        ))
+
+        sql = """
+                SELECT distinct name FROM fide_players 
+                WHERE name LIKE %s AND name REGEXP %s 
+                """
+        params = ()
+        if fulltext_name:
+            sql += " AND MATCH(name) AGAINST(%s IN BOOLEAN MODE) "
+            params += (fulltext_name,)
+
         for i in range(1, len(parts)):
             rotated_parts = parts[i:] + parts[:i]
 
             first_part = rotated_parts[0]
             regex_pattern = r"^" + r"([\s,]+)".join(map(re.escape, rotated_parts)) + r"$"
 
-            cur.execute(
-                """
-                SELECT distinct name FROM fide_players 
-                WHERE name LIKE %s AND name REGEXP %s 
-                """,
-                (first_part + '%', regex_pattern)
-            )
+            cur.execute(sql,
+                        (first_part + '%', regex_pattern) + params
+                        )
             rows = cur.fetchall()
             if len(rows) == 1:
                 row = rows[0]

@@ -8,7 +8,7 @@ from datetime import datetime
 
 import mysql.connector
 
-from . import PGN_DIR, DOWNLOAD_DIR, CPP_BIN_DIR, IMPORT_TABLE, ALL_GAMES_TABLE
+from . import PGN_DIR, DOWNLOAD_DIR, CPP_BIN_DIR, IMPORT_TABLE, ALL_GAMES_TABLE, POLAND_GAMES_TABLE
 from .scrap_chessbase import scrap_chessbase
 from .scrap_lichess import scrap_lichess
 from .scrap_twic import scrap_twic
@@ -35,6 +35,12 @@ if __name__ == '__main__':
         "--lichess",
         action="store_true",
         help="Download Lichess games"
+    )
+
+    parser.add_argument(
+        "--poland",
+        action="store_true",
+        help="Add also to poland"
     )
 
     args = parser.parse_args()
@@ -113,8 +119,6 @@ if __name__ == '__main__':
             logging.error(f"Unable to normalize")
             sys.exit(1)
 
-
-
     for i in range(RETRIES):
         subprocess.run(
             [str(CPP_BIN_DIR / "lichess_classify"), IMPORT_TABLE],
@@ -141,6 +145,17 @@ if __name__ == '__main__':
     `WhiteID`, `BlackID`, `Result`, `WhiteElo`, `BlackElo`, `ecoID`
     FROM {IMPORT_TABLE}
 """)
+
+    if args.poland:
+        curs.execute(f"""INSERT INTO `{POLAND_GAMES_TABLE}`
+            (`moves_blob`, `eventID`, `siteID`, `Year`, `Month`, `Day`, `Round`,
+            `WhiteID`, `BlackID`, `Result`, `WhiteElo`, `BlackElo`, `ecoID`)
+
+            SELECT `moves_blob`, `eventID`, `siteID`, `Year`, `Month`, `Day`, `Round`,
+            `WhiteID`, `BlackID`, `Result`, `WhiteElo`, `BlackElo`, `ecoID`
+            FROM {IMPORT_TABLE}
+        """)
+
     curs.execute(f"TRUNCATE TABLE `{IMPORT_TABLE}`")
 
     mydb.commit()
@@ -155,3 +170,7 @@ if __name__ == '__main__':
 
     removeDuplicates.main("all")
     removeSimilar.main("all")
+
+    if args.poland:
+        removeDuplicates.main("poland")
+        removeSimilar.main("poland")

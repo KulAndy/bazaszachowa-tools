@@ -16,6 +16,8 @@ from .utils import concat_pgns
 from .. import settings, removeDuplicates, removeSimilar, decode_data
 from ..players_names.fill_import import fill_event, fill_sites, fill_black, fill_white
 
+RETRIES = 5
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
@@ -45,10 +47,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if not (args.twic or args.chessbase or args.lichess):
-        parser.error("at least one of --twic, --chessbase, or --lichess is required")
+    if not (args.twic or args.chessbase or args.lichess or args.poland):
+        parser.error("at least one of --twic, --chessbase, --lichess or --poland is required")
     logging.basicConfig(level=logging.ERROR)
-    RETRIES = 5
     if args.twic:
         scrap_twic()
 

@@ -11,6 +11,7 @@ import mysql.connector
 from . import PGN_DIR, DOWNLOAD_DIR, CPP_BIN_DIR, IMPORT_TABLE, ALL_GAMES_TABLE, POLAND_GAMES_TABLE
 from .scrap_chessbase import scrap_chessbase
 from .scrap_lichess import scrap_lichess
+from .scrap_poland import scrap_poland
 from .scrap_twic import scrap_twic
 from .utils import concat_pgns
 from .. import settings, removeDuplicates, removeSimilar, decode_data
@@ -58,6 +59,9 @@ if __name__ == '__main__':
 
     if args.chessbase:
         scrap_chessbase()
+
+    if args.poland:
+        scrap_poland()
 
     concat_pgns(PGN_DIR)
 

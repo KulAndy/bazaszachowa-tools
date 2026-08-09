@@ -13,10 +13,8 @@ import mysql.connector
 import requests
 from bs4 import BeautifulSoup
 from pymongo import MongoClient
-from settings import SETTINGS
 from unidecode import unidecode
-
-logging.basicConfig(level=logging.INFO)
+from .. import settings
 
 TMP_ROOT = "tmp"
 HEADERS = {
@@ -33,14 +31,14 @@ HEADERS = {
 }
 
 MONGO_URI = (
-    f"mongodb://{quote_plus(SETTINGS['mongo']['user'])}:"
-    f"{quote_plus(SETTINGS['mongo']['password'])}@"
-    f"{SETTINGS['mongo']['host']}:27017/{SETTINGS['mongo']['database']}"
+    f"mongodb://{quote_plus(settings.SETTINGS['mongo']['user'])}:"
+    f"{quote_plus(settings.SETTINGS['mongo']['password'])}@"
+    f"{settings.SETTINGS['mongo']['host']}:27017/{settings.SETTINGS['mongo']['database']}"
 )
 MONGO_COLLECTION = "poland_tournaments"
 
 client = MongoClient(MONGO_URI)
-db = client[SETTINGS['mongo']['database']]
+db = client[settings.SETTINGS['mongo']['database']]
 coll = db[MONGO_COLLECTION]
 
 
@@ -121,7 +119,7 @@ def get_page_url(tournamentid):
 def process_tournament(args):
     file, url = args
     mydb = mysql.connector.connect(
-        **SETTINGS["mysql"]
+        **settings.SETTINGS["mysql"]
     )
     mydb.autocommit = True
     curs = mydb.cursor()
@@ -139,7 +137,7 @@ def process_tournament(args):
         with zipfile.ZipFile(file, 'r') as zip_ref:
             zip_ref.extract("tournament.xml", tmp_dir)
     except Exception as e:
-        logging.error(f"Error extracting {file}: {e}")
+        logging.warning(f"Cannot extract {file}: {e}")
         os.remove(file)
         return
 
@@ -380,13 +378,14 @@ def extract_scrapped_data(rows):
                             output.write(chunk)
                 file = filename
             except:
-                logging.error(f"Cannot download {tournamentid} file")
+                logging.warning(f"Cannot download {tournamentid} file")
 
         if file:
             process_tournament((file, url))
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.ERROR)
     os.makedirs("swsx", exist_ok=True)
     os.makedirs("swdx", exist_ok=True)
 

@@ -1,30 +1,43 @@
+import json
+import logging
 import re
-import asyncio
 from datetime import date, datetime
 from urllib.parse import quote_plus
 
+import requests
+import time
 from bs4 import BeautifulSoup
 from dateutil.relativedelta import relativedelta
-from playwright.async_api import async_playwright
 from pymongo import MongoClient
-from ..settings import SETTINGS
+
+from .. import settings
 
 MONGO_URI = (
-    f"mongodb://{quote_plus(SETTINGS['mongo']['user'])}:"
-    f"{quote_plus(SETTINGS['mongo']['password'])}@"
-    f"{SETTINGS['mongo']['host']}:27017/{SETTINGS['mongo']['database']}"
+    f"mongodb://{quote_plus(settings.SETTINGS['mongo']['user'])}:"
+    f"{quote_plus(settings.SETTINGS['mongo']['password'])}@"
+    f"{settings.SETTINGS['mongo']['host']}:27017/{settings.SETTINGS['mongo']['database']}"
 )
 MONGO_COLLECTION = "fide_tournaments"
-
 client = MongoClient(MONGO_URI)
-db = client[SETTINGS['mongo']['database']]
+db = client[settings.SETTINGS['mongo']['database']]
 coll = db[MONGO_COLLECTION]
+
 today = date.today().replace(day=1)
 two_months_ago = today - relativedelta(months=2)
 
 EVENT_RE = re.compile(r"/report\.phtml\?event=(\d+)")
 
-SEM = asyncio.Semaphore(10)
+session = requests.Session()
+session.headers.update({
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/151.0.0.0 Safari/537.36"
+    ),
+    "Accept": "*/*",
+    "Accept-Language": "pl-PL,pl;q=0.5",
+    "X-Requested-With": "XMLHttpRequest",
+})
 
 
 def get_tournaments_in_base(country):
@@ -32,181 +45,87 @@ def get_tournaments_in_base(country):
     return [doc["_id"] for doc in docs]
 
 
-async def fetch_html(page, url):
-    await page.goto(url, wait_until="networkidle")
-    return await page.content()
-
-
-async def scrap_tournament(context, event_id):
-    async with SEM:
-        page = await context.new_page()
-        url = f"https://ratings.fide.com/report.phtml?event={event_id}"
-
-        html = await fetch_html(page, url)
-        await page.close()
-
-        soup = BeautifulSoup(html, "html.parser")
-        table = soup.select_one("table.table2")
-
-        if not table:
-            raise RuntimeError("table.table2 not found")
-
-        players = []
-        for row in table.select("tr")[1:]:
-            cells = row.select("td")
-            if len(cells) < 9:
-                continue
-
-            player_id = cells[0].get_text(strip=True)
-            if player_id.isdigit():
-                players.append(int(player_id))
-
-        coll.update_one(
-            {"_id": int(event_id)},
-            {"$set": {"players": players}},
-            upsert=True,
-        )
-
-
-async def scrap_country_period(context, country, period):
-    IMPORTED_TOURNAMENTS = get_tournaments_in_base(country)
-
-    url = f"https://ratings.fide.com/rated_tournaments.phtml?country={country}&period={period}"
-    print(url)
-
-    async with SEM:
-        page = await context.new_page()
-        html = await fetch_html(page, url)
-        await page.close()
-
-    soup = BeautifulSoup(html, "html.parser")
-    table = soup.select_one("table#main_table")
-    if not table:
-        print(f"No table found for {country} period {period}")
-        return
-
-    tasks = []
-
-    for row in table.select("tr"):
-        cols = row.select("td")
-        if not cols:
-            continue
-
-        cols = cols[1:]
-
-        data = []
-        event_id = ""
-
-        for col in cols:
-            a = col.find("a")
-
-            if a:
-                name = a.get_text(strip=True)
-                data.append(name)
-                href = a.get("href", "")
-                match = EVENT_RE.search(href)
-                if match:
-                    event_id = match.group(1)
-            else:
-                data.append(col.get_text(strip=True))
-
-        if data and event_id:
-            print("|".join(data + [event_id]))
-            if int(event_id) not in IMPORTED_TOURNAMENTS:
-                name, city, system, start, received = data
-                try:
-                    start_date = datetime.strptime(start, "%d.%m.%Y")
-                except:
-                    try:
-                        start_date = datetime.strptime(start, "%Y-%m-%d")
-                    except:
-                        start_date = datetime.strptime(start, "%Y.%m.%d")
-
-                coll.update_one(
-                    {"_id": int(event_id)},
-                    {"$set": {"country": country, "name": name, "start": start_date}},
-                    upsert=True
-                )
-
-                tasks.append(scrap_tournament(context, event_id))
-
-    await asyncio.gather(*tasks)
-
-
-async def get_available_periods(context, country):
-    url = f"https://ratings.fide.com/rated_tournaments.phtml?country={country}"
-
-    page = await context.new_page()
-    html = await fetch_html(page, url)
-    await page.close()
-
-    soup = BeautifulSoup(html, "html.parser")
-    select = soup.select_one("select#archive")
-
-    if not select:
-        raise RuntimeError(f"Period selector not found for {country}")
-
-    periods = []
-
-    for option in select.select("option"):
-        value = option.get("value", "").strip()
-
-        if value == "current":
-            continue
-
-        try:
-            period_date = date.fromisoformat(value)
-        except ValueError:
-            continue
-
-        if period_date < two_months_ago:
-            continue
-
-        periods.append(period_date)
-
-    return sorted(periods, reverse=True)
-
-
-async def get_federations(context):
+def get_federations():
     url = "https://ratings.fide.com/rated_tournaments.phtml"
-
-    page = await context.new_page()
-    html = await fetch_html(page, url)
-    await page.close()
+    res = session.get(url)
+    html = res.text
 
     soup = BeautifulSoup(html, "html.parser")
     select = soup.select_one("#select_country")
 
-    return [
-        o.get("value").strip()
-        for o in select.select("option")
-        if o.get("value", "").strip()
+    if not select:
+        raise RuntimeError("select#select_country not found")
+
+    values = set([
+        opt.get("value").strip()
+        for opt in select.select("option")
+        if opt.get("value", "").strip()
+    ])
+    values.remove("all")
+    return values
+
+
+def get_periods(country: str):
+    url = f"https://ratings.fide.com/a_tournaments_panel.php?country={country}&periods_tab=1"
+    res = session.get(url)
+    data = res.json() or []
+    periods = [
+        x["frl_publish"]
+        for x in data
     ]
+    return periods
 
 
-async def main():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+def scrap_country_period(federation: str, period: str):
+    period_date = date.fromisoformat(period)
 
-        context = await browser.new_context()
-
-        federations = await get_federations(context)
-
-        for federation in federations:
+    if period_date < two_months_ago:
+        return
+    IMPORTED_TOURNAMENTS = get_tournaments_in_base(federation)
+    logging.info(f"{federation} {period}")
+    url = f"https://ratings.fide.com/a_tournaments.php?country={federation}&period={period}&_={(time.time()*100)//1}"
+    logging.debug(url)
+    res = session.get(url)
+    res.raise_for_status()
+    data = res.content.decode("utf-8-sig")
+    if not data:
+        return
+    data = json.loads(data)
+    for row in data["data"]:
+        logging.debug(row)
+        logging.debug(len(row))
+        event_id, href, site, system, start, *rest = row
+        event_id = int(event_id)
+        logging.debug(href)
+        event = BeautifulSoup(href, "html.parser").get_text(strip=True)
+        start_date = None
+        for template in ["%d.%m.%Y", "%Y.%m.%d", "%Y-%m-%d"]:
             try:
-                periods = await get_available_periods(context, federation)
-            except Exception as e:
-                print(f"period error {federation}: {e}")
-                continue
+                start_date = datetime.strptime(start, template)
+                break
+            except ValueError:
+                pass
 
-            for period in periods:
-                try:
-                    await scrap_country_period(context, federation, period)
-                except Exception as e:
-                    print(f"scrape error {federation} {period}: {e}")
+        logging.info("|".join([str(event_id), event, start_date.strftime("%Y-%m-%d")]))
+        if start_date and event_id not in IMPORTED_TOURNAMENTS:
+            coll.update_one(
+                {"_id": int(event_id)},
+                {"$set": {"country": federation, "name": event, "start": start_date}},
+                upsert=True
+            )
+            time.sleep(0.1)
 
-        await browser.close()
+
+def main():
+    session.get("https://ratings.fide.com/rated_tournaments.phtml")
+    federations = get_federations()
+    for federation in federations:
+        logging.info(federation)
+        periods = get_periods(federation)
+        for period in periods:
+            scrap_country_period(federation, period)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    logging.basicConfig(level=logging.ERROR)
+    main()

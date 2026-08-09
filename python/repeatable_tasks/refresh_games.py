@@ -13,6 +13,7 @@ from .scrap_chessbase import scrap_chessbase
 from .scrap_lichess import scrap_lichess
 from .scrap_poland import scrap_poland
 from .scrap_twic import scrap_twic
+from .scrap_chessresults import scrap_chessresult
 from .utils import concat_pgns
 from .. import settings, removeDuplicates, removeSimilar, decode_data
 from ..players_names.fill_import import fill_event, fill_sites, fill_black, fill_white
@@ -43,13 +44,19 @@ if __name__ == '__main__':
     parser.add_argument(
         "--poland",
         action="store_true",
-        help="Add also to poland"
+        help="Download poland games and add also to poland database"
+    )
+
+    parser.add_argument(
+        "--chessresult",
+        action="store_true",
+        help="Download chess results games"
     )
 
     args = parser.parse_args()
 
-    if not (args.twic or args.chessbase or args.lichess or args.poland):
-        parser.error("at least one of --twic, --chessbase, --lichess or --poland is required")
+    if not (args.twic or args.chessbase or args.lichess or args.poland or args.chessresult):
+        parser.error("at least one of --twic, --chessbase, --lichess, --poland or --chessresult is required")
     logging.basicConfig(level=logging.ERROR)
     if args.twic:
         scrap_twic()
@@ -62,6 +69,9 @@ if __name__ == '__main__':
 
     if args.poland:
         scrap_poland()
+
+    if args.chessresult:
+        scrap_chessresult()
 
     concat_pgns(PGN_DIR)
 

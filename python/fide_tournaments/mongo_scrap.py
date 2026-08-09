@@ -76,6 +76,33 @@ def get_periods(country: str):
     return periods
 
 
+def scrap_tournament(event_id):
+    url = f"https://ratings.fide.com/report.phtml?event={event_id}"
+    res = session.get(url)
+    res.raise_for_status()
+
+    soup = BeautifulSoup(res.text, "html.parser")
+    table = soup.select_one("table.table2")
+
+    if not table:
+        raise RuntimeError("table.table2 not found")
+
+    players = []
+    for row in table.select("tr")[1:]:
+        cells = row.select("td")
+        if not cells or len(cells) < 9:
+            continue
+        player_id, name, fed, title, *_ = [c.get_text(strip=True) for c in cells]
+        if player_id:
+            players.append(int(player_id))
+
+    coll.update_one(
+        {"_id": int(event_id)},
+        {"$set": {"players": players}},
+        upsert=True
+    )
+
+
 def scrap_country_period(federation: str, period: str):
     period_date = date.fromisoformat(period)
 
@@ -83,7 +110,7 @@ def scrap_country_period(federation: str, period: str):
         return
     IMPORTED_TOURNAMENTS = get_tournaments_in_base(federation)
     logging.info(f"{federation} {period}")
-    url = f"https://ratings.fide.com/a_tournaments.php?country={federation}&period={period}&_={(time.time()*100)//1}"
+    url = f"https://ratings.fide.com/a_tournaments.php?country={federation}&period={period}&_={(time.time() * 100) // 1}"
     logging.debug(url)
     res = session.get(url)
     res.raise_for_status()
@@ -123,7 +150,11 @@ def main():
         logging.info(federation)
         periods = get_periods(federation)
         for period in periods:
-            scrap_country_period(federation, period)
+            try:
+                scrap_country_period(federation, period)
+            except Exception as e:
+                print(f"Error scrapping {federation}, {period}: {e}")
+    coll.delete_many({"players": {"$exists": True, "$size": 0}})
 
 
 if __name__ == "__main__":

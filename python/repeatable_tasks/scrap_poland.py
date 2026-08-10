@@ -168,6 +168,8 @@ def pzszach_extract_pgns(tour_id):
                         except Exception as e:
                             print(tour_id)
                             print("External PGN error:", link, e)
+                            if "lichess" in link or "livechesscloud" in link:
+                                raise e
 
     return pgn
 
@@ -201,6 +203,8 @@ def chessmanager_scrap_pgns(link):
 
         except Exception as e:
             print("Chessmanager PGN error:", url, e)
+            if "lichess" in url or "livechesscloud" in url:
+                raise e
 
     return pgn
 

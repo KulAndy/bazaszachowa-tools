@@ -217,6 +217,7 @@ def scrap_poland():
             tour_id = doc["_id"]
             url = doc["url"]
             start_date = doc["start"]
+            end_date = doc["end"]
 
             try:
                 if url:
@@ -237,8 +238,10 @@ def scrap_poland():
                         pgn = ""
                         for game in games:
                             try:
-                                date = datetime.strptime(game.headers["Date"], "%Y.%m.%d")
-                                if date.year < 1950:
+                                game_date = datetime.strptime(game.headers["Date"], "%Y.%m.%d")
+                                if game_date.date() < start_date.date():
+                                    raise ValueError
+                                if game_date.date() > end_date.date():
                                     raise ValueError
                             except Exception:
                                 game.headers["Date"] = start_date.strftime('%Y.%m.%d')

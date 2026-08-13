@@ -65,7 +65,7 @@ session.get("https://www.chessmanager.com/sitemap.xml")
 session.get("https://www.chessmanager.com/en-us/tournaments/sitemap.xml")
 
 
-def download_swsx(tour_id):
+def download_swsx(tour_id: int | str) -> bytes | None:
     urls = [
         f"http://www.cr-pzszach.pl/ew/ew/swsswd/{tour_id}.swsx",
         f"http://www.cr-pzszach.pl/ew/ew/swsswd/{tour_id}.swdx",
@@ -83,7 +83,7 @@ def download_swsx(tour_id):
     return None
 
 
-def sanitize_xml(file_path):
+def sanitize_xml(file_path: str) -> None:
     try:
         with open(file_path, "r", encoding="utf-8", errors="replace") as file:
             content = file.read()
@@ -99,7 +99,7 @@ def sanitize_xml(file_path):
         raise
 
 
-def extract_tournament_links(xml_file):
+def extract_tournament_links(xml_file: str) -> set[str]:
     links = set()
 
     try:
@@ -123,7 +123,7 @@ def extract_tournament_links(xml_file):
     return links
 
 
-def pzszach_extract_pgns(tour_id):
+def pzszach_extract_pgns(tour_id: int | str) -> str:
     archive = download_swsx(tour_id)
 
     if not archive:
@@ -174,7 +174,7 @@ def pzszach_extract_pgns(tour_id):
     return pgn
 
 
-def chessmanager_scrap_pgns(link):
+def chessmanager_scrap_pgns(link: str) -> str:
     res = session.get(link, timeout=20, headers={
         "Referer": "https://www.chessmanager.com/",
     })
@@ -209,7 +209,7 @@ def chessmanager_scrap_pgns(link):
     return pgn
 
 
-def scrap_poland():
+def scrap_poland() -> None:
     docs = coll.find({
         "scanned": {
             "$ne": True

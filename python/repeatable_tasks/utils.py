@@ -26,6 +26,7 @@ def clean_pgn(pgn_path: Path):
 
     os.replace(tmp_path, pgn_path)
 
+
 def concat_pgns(pgn_path: Path):
     concat_path = pgn_path / "concat.pgn"
 

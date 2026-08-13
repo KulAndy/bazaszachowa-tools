@@ -30,7 +30,7 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
-def decode_events():
+def decode_events() -> None:
     curs.execute(r"""SELECT name 
     FROM `chess_events` 
     WHERE `name` REGEXP '[^\\x20-\\x7F]' """)
@@ -68,7 +68,7 @@ def decode_events():
     mydb.commit()
 
 
-def decode_sites():
+def decode_sites() -> None:
     curs.execute(r"""SELECT site
         FROM sites
         WHERE site REGEXP '[^\\x20-\\x7F]' """)
@@ -106,7 +106,7 @@ def decode_sites():
     mydb.commit()
 
 
-def decode_players():
+def decode_players() -> None:
     curs.execute(r"""SELECT fullname 
     FROM `players` 
     WHERE `fullname` REGEXP '[^\\x20-\\x7F]' """)

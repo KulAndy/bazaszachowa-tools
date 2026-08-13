@@ -1,5 +1,6 @@
 import os
-from datetime import datetime
+from datetime import datetime, date
+from pathlib import Path
 from zipfile import ZipFile
 
 import requests
@@ -9,11 +10,12 @@ from . import DOWNLOAD_DIR, PGN_DIR
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 os.makedirs(PGN_DIR, exist_ok=True)
 
-def calculate_date_difference(start_date, end_date):
+
+def calculate_date_difference(start_date: date, end_date: date) -> int:
     return (end_date - start_date).days
 
 
-def download_file(url, dest_path):
+def download_file(url: str, dest_path: str | Path) -> bool:
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -34,7 +36,7 @@ def download_file(url, dest_path):
     return True
 
 
-def unzip_file(zip_path, extract_dir):
+def unzip_file(zip_path: str | Path, extract_dir: str | Path) -> None:
     try:
         with ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(extract_dir)
@@ -42,7 +44,7 @@ def unzip_file(zip_path, extract_dir):
         print(f"Failed to unzip {zip_path}: {e}")
 
 
-def scrap_twic():
+def scrap_twic() -> None:
     start_date = datetime(2012, 6, 25).date()
     current_date = datetime.now().date()
 
@@ -57,6 +59,7 @@ def scrap_twic():
 
     if download_file(zip_url, zip_path):
         unzip_file(zip_path, PGN_DIR)
+
 
 if __name__ == "__main__":
     scrap_twic()

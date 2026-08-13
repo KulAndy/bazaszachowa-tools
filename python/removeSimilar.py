@@ -15,7 +15,7 @@ db_pool = None
 unique_years = set()
 
 
-def init_db_pool():
+def init_db_pool() -> None:
     global db_pool
     db_pool = pooling.MySQLConnectionPool(
         pool_name="my_pool",
@@ -25,7 +25,7 @@ def init_db_pool():
     )
 
 
-def fetch_duplicate_games(year, table):
+def fetch_duplicate_games(year: int, table: str) -> list[tuple]:
     connection = db_pool.get_connection()
     cursor = connection.cursor(buffered=True)
     try:
@@ -45,7 +45,7 @@ def fetch_duplicate_games(year, table):
         connection.close()
 
 
-def fetch_game_details(table, ids):
+def fetch_game_details(table: str, ids: list[str]) -> list[tuple]:
     global db_pool
     connection = db_pool.get_connection()
     cursor = connection.cursor(buffered=True)
@@ -174,7 +174,7 @@ def process_year(year, table, lock, duplicates):
         logging.error(f"Error processing year {year}: {str(e)}")
 
 
-def main(TABLE):
+def main(TABLE) -> int | None:
     global db_pool
     init_db_pool()
     try:

@@ -1,5 +1,6 @@
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
+from typing import Tuple, Literal
 from urllib.parse import urlparse
 
 import mysql.connector
@@ -16,7 +17,7 @@ TABLE = "all_games"
 
 # ---------------- Helpers ----------------
 
-def ms_to_date(ms: int):
+def ms_to_date(ms: int) -> date:
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).date()
 
 
@@ -28,7 +29,14 @@ def resolve_final_url(url: str) -> str:
 
 # ---------------- Broadcast parsing ----------------
 
-def parse_broadcast_url(url: str):
+def parse_broadcast_url(
+        url: str
+) -> (
+        Tuple[Literal["tournament"], str] |
+        Tuple[Literal["tournament"], str, str] |
+        Tuple[Literal["round"], str, str, str] |
+        None
+):
     """
     Returns:
       ("tournament", tournament_id)
@@ -37,13 +45,13 @@ def parse_broadcast_url(url: str):
     parts = urlparse(url).path.strip("/").split("/")
 
     if len(parts) == 2 and parts[0] == "broadcast":
-        return ("tournament", parts[1])
+        return "tournament", parts[1]
 
     if len(parts) == 3 and parts[0] == "broadcast":
-        return ("tournament", parts[2])
+        return "tournament", parts[2]
 
     if len(parts) >= 4 and parts[0] == "broadcast":
-        return ("round", parts[1], parts[2], parts[3])
+        return "round", parts[1], parts[2], parts[3]
 
     return None
 
@@ -124,7 +132,7 @@ def fetch_study_pgn(study_id: str, chapter_id: str | None = None) -> str:
 PGN_DATE_RE = re.compile(r'\[(UTCDate|Date)\s+"(\d{4})\.(\d{2})\.(\d{2})"\]')
 
 
-def extract_pgn_date(pgn: str):
+def extract_pgn_date(pgn: str) -> Tuple[int, int, int] | None:
     for line in pgn.splitlines():
         m = PGN_DATE_RE.match(line)
         if m:

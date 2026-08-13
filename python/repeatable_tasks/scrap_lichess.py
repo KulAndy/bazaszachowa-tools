@@ -13,7 +13,7 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 os.makedirs(PGN_DIR, exist_ok=True)
 
 
-def get_latest_broadcast_url():
+def get_latest_broadcast_url() -> str:
     today = date.today()
 
     if today.month == 1:
@@ -27,7 +27,7 @@ def get_latest_broadcast_url():
     return f"https://database.lichess.org/broadcast/{filename}"
 
 
-def download_file(url):
+def download_file(url) -> str:
     filename = os.path.basename(urlparse(url).path)
     dest_path = os.path.join(DOWNLOAD_DIR, filename)
 
@@ -42,7 +42,7 @@ def download_file(url):
     return filename
 
 
-def decompress_file(filename):
+def decompress_file(filename: str) -> None:
     src_path = Path(DOWNLOAD_DIR) / filename
     output_path = Path(PGN_DIR) / filename.replace(".zst", "")
 
@@ -54,7 +54,8 @@ def decompress_file(filename):
 
     clean_pgn(output_path)
 
-def scrap_lichess():
+
+def scrap_lichess() -> None:
     url = get_latest_broadcast_url()
 
     filename = download_file(url)

@@ -1,12 +1,13 @@
 import re
 import sys
 from os.path import exists
+from typing import Tuple, Optional, Dict
 
 import chess
 import chess.pgn
 
 
-def validate_date(date_str):
+def validate_date(date_str: str) -> bool:
     if len(date_str) < 4:
         return False
     for i in range(4):
@@ -15,7 +16,7 @@ def validate_date(date_str):
     return True
 
 
-def parse_date(date_str):
+def parse_date(date_str: str) -> Tuple[int | None, int | None, int | None]:
     date_regex = r"(\d+)(?:[^\d]+(\d+)(?:[^\d]+(\d+))?)?"
     match = re.search(date_regex, date_str)
     if match:
@@ -26,7 +27,7 @@ def parse_date(date_str):
     return None, None, None
 
 
-def pack_move(src, dest, piece):
+def pack_move(src: chess.Square, dest: chess.Square, piece: Optional[chess.PieceType]):
     return (src << 10) | (dest << 4) | (piece & 0x07)
 
 
@@ -65,7 +66,7 @@ def main():
                 if game is None:
                     break
 
-                game_data = {key: "null" for key in pgn_keys}
+                game_data: Dict[str, int | None | str] = {key: "null" for key in pgn_keys}
                 game_data["Year"] = game_data["Month"] = game_data["Day"] = None
                 moves_blob = bytearray()
 
@@ -74,14 +75,20 @@ def main():
                         if key in game.headers:
                             value = game.headers[key]
                             if key in ("WhiteElo", "BlackElo"):
-                                game_data[key] = int(value) if value != "?" else None
+                                try:
+                                    game_data[key] = int(value)
+                                except ValueError:
+                                    game_data[key] = None
                             elif key in ("Event", "Site", "Round", "White", "Black", "Result"):
                                 game_data[key] = value if value != "?" else "?"
                             elif key == "Date":
                                 year, month, day = parse_date(value)
-                                if year: game_data["Year"] = year
-                                if month: game_data["Month"] = month
-                                if day: game_data["Day"] = day
+                                if year:
+                                    game_data["Year"] = year
+                                if month:
+                                    game_data["Month"] = month
+                                if day:
+                                    game_data["Day"] = day
 
                     board = game.board()
                     for move in game.mainline_moves():

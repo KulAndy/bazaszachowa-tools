@@ -10,7 +10,7 @@ mydb = mysql.connector.connect(
 )
 
 
-def url_exists(url, timeout=5):
+def url_exists(url: str, timeout: int = 5) -> bool:
     try:
         r = requests.get(
             url,

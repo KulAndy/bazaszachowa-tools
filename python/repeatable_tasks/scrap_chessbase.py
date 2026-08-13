@@ -10,7 +10,8 @@ from .utils import clean_pgn
 
 os.makedirs(PGN_DIR, exist_ok=True)
 
-def scrap_chessbase():
+
+def scrap_chessbase() -> None:
     url = "https://live.chessbase.com/en/History"
     response = requests.get(url)
 
@@ -24,7 +25,7 @@ def scrap_chessbase():
         ]
 
         pgn_file = Path(PGN_DIR) / "chessbase.pgn"
-        with open(pgn_file,'w') as output:
+        with open(pgn_file, 'w') as output:
             for link in links:
                 tournament_link = f"https://live.chessbase.com{link}"
                 parsed_url = urlparse(tournament_link)

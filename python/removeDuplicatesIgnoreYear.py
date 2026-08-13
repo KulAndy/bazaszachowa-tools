@@ -2,6 +2,8 @@ import re
 import sys
 import threading
 import traceback
+from typing import Generator
+
 from mysql.connector import pooling
 from settings import SETTINGS
 
@@ -10,7 +12,7 @@ db_pool = None
 unique_years = set()
 
 
-def init_db_pool():
+def init_db_pool() -> None:
     global db_pool
     db_pool = pooling.MySQLConnectionPool(
         pool_name="my_pool",
@@ -20,7 +22,7 @@ def init_db_pool():
     )
 
 
-def fetch_duplicate_games(table):
+def fetch_duplicate_games(table: str) -> Generator[tuple]:
     global db_pool
     connection = db_pool.get_connection()
     cursor = connection.cursor(buffered=True)
@@ -46,7 +48,7 @@ def fetch_duplicate_games(table):
         connection.close()
 
 
-def fetch_game_details(table, ids):
+def fetch_game_details(table: str, ids: list[str]) -> list[tuple]:
     global db_pool
     connection = None
     cursor = None
@@ -73,7 +75,11 @@ def fetch_game_details(table, ids):
             connection.close()
 
 
-def process_duplicates(table, lock, duplicates):
+def process_duplicates(
+        table: str,
+        lock: threading.Lock,
+        duplicates: list[int]
+) -> None:
     try:
         for rows in fetch_duplicate_games(table):
             local_duplicates = 0
@@ -132,7 +138,6 @@ def process_duplicates(table, lock, duplicates):
                                 update_params.append((year1, month1, day1, game_id2))
                             local_duplicates += 1
 
-
                         if len(update_params) >= 1000:
                             cursor.executemany(update_game_sql, update_params)
                             connection.commit()
@@ -172,7 +177,7 @@ def process_duplicates(table, lock, duplicates):
         traceback.print_exc()
 
 
-def main():
+def main() -> int:
     global db_pool
     init_db_pool()
     try:

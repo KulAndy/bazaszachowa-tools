@@ -40,12 +40,12 @@ session.headers.update({
 })
 
 
-def get_tournaments_in_base(country):
+def get_tournaments_in_base(country: str) -> list[int]:
     docs = coll.find({"country": country}, {"_id": 1})
     return [doc["_id"] for doc in docs]
 
 
-def get_federations():
+def get_federations() -> set[str]:
     url = "https://ratings.fide.com/rated_tournaments.phtml"
     res = session.get(url)
     html = res.text
@@ -65,7 +65,7 @@ def get_federations():
     return values
 
 
-def get_periods(country: str):
+def get_periods(country: str) -> list[str]:
     url = f"https://ratings.fide.com/a_tournaments_panel.php?country={country}&periods_tab=1"
     res = session.get(url)
     data = res.json() or []
@@ -76,7 +76,7 @@ def get_periods(country: str):
     return periods
 
 
-def scrap_tournament(event_id):
+def scrap_tournament(event_id: int | str) -> None:
     url = f"https://ratings.fide.com/report.phtml?event={event_id}"
     res = session.get(url)
     res.raise_for_status()
@@ -103,7 +103,7 @@ def scrap_tournament(event_id):
     )
 
 
-def scrap_country_period(federation: str, period: str):
+def scrap_country_period(federation: str, period: str) -> None:
     period_date = date.fromisoformat(period)
 
     if period_date < two_months_ago:
@@ -143,7 +143,7 @@ def scrap_country_period(federation: str, period: str):
             time.sleep(0.1)
 
 
-def main():
+def main() -> None:
     session.get("https://ratings.fide.com/rated_tournaments.phtml")
     federations = get_federations()
     for federation in federations:

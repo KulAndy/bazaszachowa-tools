@@ -42,7 +42,7 @@ db = client[settings.SETTINGS['mongo']['database']]
 coll = db[MONGO_COLLECTION]
 
 
-def get_tournaments_in_base():
+def get_tournaments_in_base() -> list[int]:
     tournaments = db.poland_tournaments.distinct("_id")
     return tournaments
 
@@ -50,11 +50,11 @@ def get_tournaments_in_base():
 IMPORTED_TOURNAMENTS = get_tournaments_in_base()
 
 
-def list_files_in_directory(directory):
+def list_files_in_directory(directory: str) -> list[str]:
     return [os.path.join(root, file) for root, dirs, files in os.walk(directory) for file in files]
 
 
-def sanitize_xml(file_path):
+def sanitize_xml(file_path: str) -> None:
     try:
         with open(file_path, 'r', encoding='utf-8', errors='replace') as file:
             content = file.read()
@@ -75,7 +75,7 @@ def sanitize_xml(file_path):
         raise
 
 
-def get_page_url(tournamentid):
+def get_page_url(tournamentid: str | int) -> str | None:
     url = f"http://www.cr-pzszach.pl/ew/viewpage.php?page_id=10&id_turnieju={tournamentid}"
 
     try:
@@ -116,7 +116,7 @@ def get_page_url(tournamentid):
     return None
 
 
-def process_tournament(args):
+def process_tournament(args: tuple[str, str | None]) -> None:
     file, url = args
     mydb = mysql.connector.connect(
         **settings.SETTINGS["mysql"]
@@ -259,7 +259,7 @@ def process_tournament(args):
     os.remove(file)
 
 
-def import_swsx_s():
+def import_swsx_s() -> None:
     while True:
         dirs = ['swsx', 'swdx', 'sws', 'swd']
         swsx_files = []
@@ -276,7 +276,7 @@ def import_swsx_s():
         shutil.rmtree(TMP_ROOT)
 
 
-def scrap_tournaments(year):
+def scrap_tournaments(year: int) -> list[list[str]] | None:
     logging.info(f"SCRAPING YEAR: {year}")
 
     url = f"http://www.cr-pzszach.pl/ew/viewpage.php?page_id=12&rok={year}"
@@ -350,7 +350,7 @@ def scrap_tournaments(year):
     return data
 
 
-def extract_scrapped_data(rows):
+def extract_scrapped_data(rows: list[list[str]] | None) -> None:
     for row in rows:
         lp, tournamentid, regeistered, date, card, place, arbiter, url = row
         if int(tournamentid) in IMPORTED_TOURNAMENTS:

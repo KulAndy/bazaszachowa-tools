@@ -3,7 +3,6 @@ chess==1.11.2
 curl_cffi==0.16.0
 mysql==0.0.3
 mysql-connector-python==9.7.0
-numpy==2.5.2
 PyInputPlus==0.2.12
 pymongo==4.17.0
 python-dateutil==2.9.0.post0

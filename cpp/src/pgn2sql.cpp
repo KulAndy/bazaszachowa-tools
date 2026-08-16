@@ -1,17 +1,18 @@
+#include <format>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <regex>
 #include <sstream>
+#include <stdexcept>
 
 #include "chess-library/include/chess.hpp"
 
 using namespace chess;
 using namespace std;
 
-const bool validateDate(string_view date) {
+bool validateDate(string_view date) {
   if (date.size() < 4) {
     return false;
   }
@@ -27,13 +28,12 @@ const bool validateDate(string_view date) {
 
 class MyVisitor : public pgn::Visitor {
 public:
-public:
   MyVisitor(ofstream &outFile, const string &tableName)
       : outFile(outFile), tableName(tableName) {
     cout << endl;
   }
 
-  virtual ~MyVisitor() {}
+  ~MyVisitor() = default;
 
   void startPgn() {
     board.setFen(constants::STARTPOS);
@@ -60,18 +60,18 @@ public:
       result = value;
     } else if (key == "Date") {
       parseDateValue(value);
-    } else if (key == "EventDate") {
-      if (validateDate(value) && (!year.has_value() || year.value() == 1899)) {
-        parseDateValue(value);
-      }
-    } else if (key == "UTCDate") {
-      if (validateDate(value) && (!year.has_value() || year.value() == 1899)) {
-        parseDateValue(value);
-      }
+    } else if (key == "EventDate" && validateDate(value) &&
+               (!year.has_value() || year.value() == 1899)) {
+      parseDateValue(value);
+    } else if (key == "UTCDate" && validateDate(value) &&
+               (!year.has_value() || year.value() == 1899)) {
+      parseDateValue(value);
     }
   }
 
-  void startMoves() {}
+  void startMoves() {
+    // Intentionally left empty: No action required at the start of moves.
+  }
 
   void move(string_view move, string_view comment) {
     try {
@@ -107,69 +107,37 @@ public:
       movesStream << static_cast<char>((packed >> 8) & 0xFF)
                   << static_cast<char>(packed & 0xFF);
       board.makeMove(m);
-    } catch (exception &e) {
+    } catch (const std::invalid_argument &e) {
+      cerr << "Error in move processing: " << e.what() << endl;
+    } catch (const std::out_of_range &e) {
       cerr << "Error in move processing: " << e.what() << endl;
     }
   }
 
   void endPgn() {
-    outFile << "insert ignore into " << tableName
-            << " (moves_blob,Event,Site,Year,Month,Day,Round,White,Black,"
-               "Result,WhiteElo,BlackElo) values("
-            << "0x";
+    outFile << format(
+        "INSERT IGNORE INTO {} (moves_blob, Event, Site, Year, Month, Day, "
+        "Round, White, Black, Result, WhiteElo, BlackElo) VALUES(",
+        tableName);
+
+    outFile << "0x";
     for (unsigned char c : movesStream.str()) {
-      outFile << hex << setw(2) << setfill('0') << static_cast<int>(c);
-    }
-    outFile << dec;
-
-    outFile << "," << "\"" << event << "\"" << "," << "\"" << site << "\""
-            << ",";
-    if (year.has_value()) {
-      outFile << year.value();
-    } else {
-      outFile << "null";
+      outFile << format("{:02x}", static_cast<int>(c));
     }
 
-    outFile << ",";
+    outFile << format(
+        ", \"{}\", \"{}\", {}, {}, {}, \"{}\", \"{}\", \"{}\", \"{}\", {}, "
+        "{});\n",
+        event, site, year.has_value() ? to_string(year.value()) : "NULL",
+        month.has_value() ? to_string(month.value()) : "NULL",
+        day.has_value() ? to_string(day.value()) : "NULL", round, white, black,
+        result, whiteElo.has_value() ? to_string(whiteElo.value()) : "NULL",
+        blackElo.has_value() ? to_string(blackElo.value()) : "NULL");
 
-    if (month.has_value()) {
-      outFile << month.value();
-    } else {
-      outFile << "null";
-    }
-
-    outFile << ",";
-
-    if (day.has_value()) {
-      outFile << day.value();
-    } else {
-      outFile << "null";
-    }
-
-    outFile << "," << "\"" << round << "\"" << "," << "\"" << white << "\""
-            << "," << "\"" << black << "\"" << "," << "\"" << result << "\""
-            << ",";
-
-    if (whiteElo.has_value()) {
-      outFile << whiteElo.value();
-    } else {
-      outFile << "NULL";
-    }
-
-    outFile << ",";
-
-    if (blackElo.has_value()) {
-      outFile << blackElo.value();
-    } else {
-      outFile << "NULL";
-    }
-
-    outFile << ");\n";
-
-    cout << "\rPrzetworzono " << ++counter << " partii";
+    cout << "\rProcessed " << ++counter << " games";
   }
 
-protected:
+private:
   ofstream &outFile;
   string tableName;
   Board board;
@@ -202,14 +170,18 @@ protected:
         if (matches.size() > 3 && !matches[3].str().empty()) {
           day = stoi(matches[3].str());
         }
-      } catch (...) {
+      } catch (const std::invalid_argument &e) {
+        cerr << "Invalid date format: " << e.what() << endl;
+      } catch (const std::out_of_range &e) {
+        cerr << "Date out of range: " << e.what() << endl;
       }
     }
   }
 };
 
 int main(int argc, char **argv) {
-  string input_file, target_table;
+  string input_file;
+  string target_table;
 
   if (argc > 1) {
     input_file = argv[1];

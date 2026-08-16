@@ -7,7 +7,8 @@
 
 using namespace chess;
 using namespace std;
-const bool validateDate(string_view date) {
+
+bool validateDate(string_view date) {
   if (date.size() < 4) {
     return false;
   }
@@ -23,7 +24,7 @@ const bool validateDate(string_view date) {
 
 class BasicVisitor : public pgn::Visitor {
 public:
-  virtual ~BasicVisitor() {}
+  ~BasicVisitor() = default;
 
   void startPgn() { board.setFen(constants::STARTPOS); }
 
@@ -48,22 +49,25 @@ public:
       result = value;
     } else if (key == "Date") {
       parseDateValue(value);
-    } else if (key == "EventDate") {
-      if (!validateDate(value) || year.value() == 1899) {
-        parseDateValue(value);
-      }
-    } else if (key == "UCIDate") {
-      if (!validateDate(value) || year.value() == 1899) {
-        parseDateValue(value);
-      }
+    } else if (key == "EventDate" &&
+               (!validateDate(value) || !year.has_value() ||
+                year.value() == 1899)) {
+      parseDateValue(value);
+    } else if (key == "UCIDate" && (!validateDate(value) || !year.has_value() ||
+                                    year.value() == 1899)) {
+      parseDateValue(value);
     }
   }
 
-  void startMoves() {}
+  void startMoves() {
+    // Intentionally left empty: No action required at the start of moves.
+  }
 
-  void move(std::string_view move, std::string_view comment) {}
+  void move(std::string_view move, std::string_view comment) {
+    // Intentionally left empty: No action required per move.
+  }
 
-protected:
+private:
   Board board;
   string event = "?";
   string site = "?";
@@ -80,34 +84,35 @@ protected:
 
   void parseDateValue(string_view value) {
     size_t first_pos = value.find('.');
-    size_t second_pos = std::string_view::npos;
-    size_t third_pos = std::string_view::npos;
+    if (first_pos == std::string_view::npos) {
+      return;
+    }
 
-    if (first_pos != std::string_view::npos) {
+    try {
+      year = stoi(string(value.substr(0, first_pos)));
+    } catch (const std::invalid_argument &) {
+      return;
+    }
+
+    size_t second_pos = value.find('.', first_pos + 1);
+    if (second_pos == std::string_view::npos) {
+      return;
+    }
+
+    try {
+      month =
+          stoi(string(value.substr(first_pos + 1, second_pos - first_pos - 1)));
+    } catch (const std::invalid_argument &) {
+      return;
+    }
+
+    size_t third_pos = value.find('.', second_pos + 1);
+    if (third_pos != std::string_view::npos) {
       try {
-        year = stoi(string(value.substr(0, first_pos)));
-      } catch (const std::invalid_argument &e) {
-        return;
-      }
-
-      second_pos = value.find('.', first_pos + 1);
-      if (second_pos != std::string_view::npos) {
-        try {
-          month = stoi(
-              string(value.substr(first_pos + 1, second_pos - first_pos - 1)));
-        } catch (const std::invalid_argument &e) {
-          return;
-        }
-
-        third_pos = value.find('.', second_pos + 1);
-        if (third_pos != std::string_view::npos) {
-          try {
-            day = stoi(string(
-                value.substr(second_pos + 1, third_pos - second_pos - 1)));
-          } catch (const std::invalid_argument &e) {
-            return;
-          }
-        }
+        day = stoi(
+            string(value.substr(second_pos + 1, third_pos - second_pos - 1)));
+      } catch (const std::invalid_argument &) {
+        // Ignore invalid day
       }
     }
   }

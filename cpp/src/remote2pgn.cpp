@@ -1,7 +1,10 @@
 #include "chess-library/include/chess.hpp"
 #include "mysql_settings.hpp"
+#include <array>
 #include <condition_variable>
+#include <cstddef>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -17,7 +20,7 @@ using namespace std;
 const unsigned int detected_threads = thread::hardware_concurrency();
 const unsigned int N_THREADS = max(2u, detected_threads) - 1;
 
-const vector<string> SQUARES = {
+const array<string, 64> SQUARES = {
     "a1", "b1", "c1", "d1", "e1", "f1", "g1", "h1", "a2", "b2", "c2",
     "d2", "e2", "f2", "g2", "h2", "a3", "b3", "c3", "d3", "e3", "f3",
     "g3", "h3", "a4", "b4", "c4", "d4", "e4", "f4", "g4", "h4", "a5",
@@ -25,11 +28,19 @@ const vector<string> SQUARES = {
     "e6", "f6", "g6", "h6", "a7", "b7", "c7", "d7", "e7", "f7", "g7",
     "h7", "a8", "b8", "c8", "d8", "e8", "f8", "g8", "h8"};
 
-const vector<string> PIECES = {"p", "n", "b", "r", "q", "k", ""};
+const array<string, 7> PIECES = {"p", "n", "b", "r", "q", "k", ""};
 
 struct GameData {
-  string event, site, date, round;
-  string white, black, result, whiteElo, blackElo, eco;
+  string event;
+  string site;
+  string date;
+  string round;
+  string white;
+  string black;
+  string result;
+  string whiteElo;
+  string blackElo;
+  string eco;
   string movesBlob;
 };
 
@@ -73,8 +84,11 @@ void processGame(GameData &&game, ostream &output) {
   size_t counter = 2;
 
   for (size_t i = 0; i + 1 < movesData.size(); i += 2) {
-    uint16_t packed = (static_cast<uint8_t>(movesData[i]) << 8) |
-                      static_cast<uint8_t>(movesData[i + 1]);
+    std::byte byte1 = static_cast<std::byte>(movesData[i]);
+    std::byte byte2 = static_cast<std::byte>(movesData[i + 1]);
+    uint16_t packed =
+        (static_cast<uint16_t>(byte1) << 8) | static_cast<uint16_t>(byte2);
+
     int from = (packed >> 10) & 0x3f;
     int to = (packed >> 4) & 0x3f;
     int promotion = packed & 0x07;
@@ -112,7 +126,7 @@ void processBatch(vector<GameData> &&games, const string &year) {
   output.close();
 }
 
-void processYear(const string table, const string &year) {
+void processYear(const string &table, const string &year) {
   MYSQL *conn = mysql_init(nullptr);
   if (!conn) {
     cerr << "mysql_init failed\n";
@@ -155,29 +169,27 @@ void processYear(const string table, const string &year) {
     return;
   }
 
-  MYSQL_BIND param[3];
-  memset(param, 0, sizeof(param));
-
+  array<MYSQL_BIND, 3> param{};
   string year_str = year;
   param[0].buffer_type = MYSQL_TYPE_STRING;
   param[0].buffer = (void *)year_str.c_str();
   param[0].buffer_length = year_str.size();
-  param[0].is_null = 0;
+  param[0].is_null = nullptr;
   param[0].length = &param[0].buffer_length;
 
   int batchSize = 1000;
   param[1].buffer_type = MYSQL_TYPE_LONG;
   param[1].buffer = (void *)&batchSize;
-  param[1].is_null = 0;
+  param[1].is_null = nullptr;
   param[1].length = nullptr;
 
   int offset = 0;
   param[2].buffer_type = MYSQL_TYPE_LONG;
   param[2].buffer = (void *)&offset;
-  param[2].is_null = 0;
+  param[2].is_null = nullptr;
   param[2].length = nullptr;
 
-  if (mysql_stmt_bind_param(stmt, param)) {
+  if (mysql_stmt_bind_param(stmt, param.data())) {
     cerr << "mysql_stmt_bind_param failed: " << mysql_stmt_error(stmt) << "\n";
     mysql_stmt_close(stmt);
     mysql_close(conn);
@@ -202,11 +214,9 @@ void processYear(const string table, const string &year) {
       break;
     }
 
-    MYSQL_BIND bind[13];
-    memset(bind, 0, sizeof(bind));
-
-    char *buffers[13];
-    unsigned long lengths[13];
+    array<MYSQL_BIND, 13> bind{};
+    array<char *, 13> buffers{};
+    array<unsigned long, 13> lengths{};
     int num_fields = mysql_num_fields(result);
 
     for (int i = 0; i < num_fields; ++i) {
@@ -216,11 +226,10 @@ void processYear(const string table, const string &year) {
       bind[i].buffer = buffers[i];
       bind[i].buffer_length = 1024;
       bind[i].length = &lengths[i];
-      bind[i].is_null = new bool;
-      *(bind[i].is_null) = 0;
+      bind[i].is_null = new bool(false);
     }
 
-    if (mysql_stmt_bind_result(stmt, bind)) {
+    if (mysql_stmt_bind_result(stmt, bind.data())) {
       cerr << "mysql_stmt_bind_result failed: " << mysql_stmt_error(stmt)
            << "\n";
       mysql_free_result(result);
@@ -235,44 +244,44 @@ void processYear(const string table, const string &year) {
     while (!mysql_stmt_fetch(stmt)) {
       moreRows = true;
       GameData game;
-      game.event = bind[0].is_null && *(bind[0].is_null)
+      game.event = (bind[0].is_null && *(bind[0].is_null))
                        ? ""
                        : string(buffers[0], lengths[0]);
-      game.site = bind[1].is_null && *(bind[1].is_null)
+      game.site = (bind[1].is_null && *(bind[1].is_null))
                       ? ""
                       : string(buffers[1], lengths[1]);
-      string year = bind[2].is_null && *(bind[2].is_null)
-                        ? ""
-                        : string(buffers[2], lengths[2]);
-      string month = bind[3].is_null && *(bind[3].is_null)
+      string year_local = (bind[2].is_null && *(bind[2].is_null))
+                              ? ""
+                              : string(buffers[2], lengths[2]);
+      string month = (bind[3].is_null && *(bind[3].is_null))
                          ? ""
                          : string(buffers[3], lengths[3]);
-      string day = bind[4].is_null && *(bind[4].is_null)
+      string day = (bind[4].is_null && *(bind[4].is_null))
                        ? ""
                        : string(buffers[4], lengths[4]);
-      game.date = buildDate(year, month, day);
-      game.round = bind[5].is_null && *(bind[5].is_null)
+      game.date = buildDate(year_local, month, day);
+      game.round = (bind[5].is_null && *(bind[5].is_null))
                        ? ""
                        : string(buffers[5], lengths[5]);
-      game.white = bind[6].is_null && *(bind[6].is_null)
+      game.white = (bind[6].is_null && *(bind[6].is_null))
                        ? ""
                        : string(buffers[6], lengths[6]);
-      game.black = bind[7].is_null && *(bind[7].is_null)
+      game.black = (bind[7].is_null && *(bind[7].is_null))
                        ? ""
                        : string(buffers[7], lengths[7]);
-      game.result = bind[8].is_null && *(bind[8].is_null)
+      game.result = (bind[8].is_null && *(bind[8].is_null))
                         ? ""
                         : string(buffers[8], lengths[8]);
-      game.whiteElo = bind[9].is_null && *(bind[9].is_null)
+      game.whiteElo = (bind[9].is_null && *(bind[9].is_null))
                           ? ""
                           : string(buffers[9], lengths[9]);
-      game.blackElo = bind[10].is_null && *(bind[10].is_null)
+      game.blackElo = (bind[10].is_null && *(bind[10].is_null))
                           ? ""
                           : string(buffers[10], lengths[10]);
-      game.eco = bind[11].is_null && *(bind[11].is_null)
+      game.eco = (bind[11].is_null && *(bind[11].is_null))
                      ? ""
                      : string(buffers[11], lengths[11]);
-      game.movesBlob = bind[12].is_null && *(bind[12].is_null)
+      game.movesBlob = (bind[12].is_null && *(bind[12].is_null))
                            ? ""
                            : string(buffers[12], lengths[12]);
       batchGames.push_back(move(game));
@@ -294,6 +303,7 @@ void processYear(const string table, const string &year) {
   mysql_stmt_close(stmt);
   mysql_close(conn);
 }
+
 int main(int argc, char *argv[]) {
   string table = "all_games";
   if (argc > 1) {
@@ -314,9 +324,9 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  string query =
-      "SELECT DISTINCT `Year` FROM `" + table + "` WHERE `Year` IS NOT NULL";
-  if (mysql_query(conn, query.c_str())) {
+  if (string query = "SELECT DISTINCT `Year` FROM `" + table +
+                     "` WHERE `Year` IS NOT NULL";
+      mysql_query(conn, query.c_str())) {
     cerr << "Query error: " << mysql_error(conn) << "\n";
     mysql_close(conn);
     return 1;
@@ -329,17 +339,17 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  set<string> years;
+  set<string, less<>> years;
   MYSQL_ROW row;
   while ((row = mysql_fetch_row(result))) {
     if (row[0]) {
-      years.insert(row[0]);
+      years.emplace(row[0]);
     }
   }
   mysql_free_result(result);
   mysql_close(conn);
 
-  vector<thread> workers;
+  vector<jthread> workers;
   workers.reserve(N_THREADS);
 
   for (const auto &year : years) {
@@ -351,7 +361,7 @@ int main(int argc, char *argv[]) {
       }
       workers.clear();
     }
-    workers.emplace_back(processYear, table, year);
+    workers.emplace_back(processYear, std::cref(table), std::cref(year));
   }
 
   for (auto &t : workers) {

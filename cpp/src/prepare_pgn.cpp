@@ -2,8 +2,10 @@
 #include <fstream>
 #include <map>
 #include <memory>
+#include <ranges>
 #include <regex>
 #include <sstream>
+#include <stdexcept>
 #include <vector>
 
 #include "chess-library/include/chess.hpp"
@@ -13,7 +15,7 @@ using namespace std;
 
 class FilterVisitor : public pgn::Visitor {
 public:
-  FilterVisitor(ofstream &outFile) : outFile(outFile) {}
+  explicit FilterVisitor(ofstream &outFile) : outFile(outFile) {}
 
   void startPgn() override {
     board.setFen(constants::STARTPOS);
@@ -42,10 +44,12 @@ public:
     }
   }
 
-  void startMoves() override {}
+  void startMoves() override {
+    // Intentionally left empty: No action required at the start of moves.
+  }
 
   void move(string_view move, string_view comment) override {
-    moves.push_back(string(move));
+    moves.emplace_back(move);
   }
 
   void endPgn() override {
@@ -78,18 +82,22 @@ private:
   bool whiteIsBot = false;
   bool blackIsBot = false;
   vector<string> moves;
-  map<string, string> headers;
+  map<string, string, less<>> headers;
   string result;
 
   int extractYear(string_view value) {
-    regex dateRegex(R"((\d+)(?:[^\d]+(\d+)(?:[^\d]+(\d+))?)?)");
+    static const regex dateRegex(R"((\d+)(?:[^\d]+(\d+)(?:[^\d]+(\d+))?)?)");
     smatch matches;
     string valueStr(value);
 
     if (regex_search(valueStr, matches, dateRegex)) {
       try {
         return stoi(matches[1].str());
-      } catch (...) {
+      } catch (const std::invalid_argument &e) {
+        cerr << "Invalid date format: " << e.what() << endl;
+        return 0;
+      } catch (const std::out_of_range &e) {
+        cerr << "Date out of range: " << e.what() << endl;
         return 0;
       }
     }
@@ -98,13 +106,12 @@ private:
 };
 
 pair<string, string> preprocessHeaderLine(const string &line) {
-  static const regex headerRegex("\\[(\\w+)\\s+\"(.*)\"\\]");
-  smatch matches;
-  if (regex_match(line, matches, headerRegex)) {
+  static const regex headerRegex(R"#(\[(\w+)\s+"(.*)"\])#");
+  if (smatch matches; regex_match(line, matches, headerRegex)) {
     string key = matches[1].str();
     string value = matches[2].str();
-    value.erase(remove(value.begin(), value.end(), '"'), value.end());
-    value.erase(remove(value.begin(), value.end(), '\\'), value.end());
+    erase(value, '"');
+    erase(value, '\\');
     return {key, value};
   }
   return {"", ""};

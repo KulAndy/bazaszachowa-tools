@@ -55,7 +55,7 @@ def fetch_game_details(table: str, ids: list[str]) -> list[tuple]:
     try:
         connection = db_pool.get_connection()
         cursor = connection.cursor(buffered=True)
-        ids = re.sub(r"\[|\]", "", ",".join(ids))
+        ids = re.sub(r"[\[\]]", "", ",".join(ids))
         sql = f"""
             SELECT id, moves_blob, Year, Month, Day
             FROM {table}_games

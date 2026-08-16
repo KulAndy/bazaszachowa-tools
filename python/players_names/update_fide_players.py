@@ -11,7 +11,7 @@ from settings import SETTINGS
 
 
 def extract_list(url):
-    file_name, headers = urllib.request.urlretrieve(url)
+    file_name, _ = urllib.request.urlretrieve(url)
     with zipfile.ZipFile(file_name, "r") as zip_ref:
         zip_ref.extractall()
 
@@ -78,12 +78,12 @@ def import_list(filename):
 
     try:
         os.remove("players_list_xml.xml")
-    except OSError as e:
+    except OSError:
         pass
 
 
 def main():
-    extract_list("http://ratings.fide.com/download/players_list_xml_legacy.zip")
+    extract_list("https://ratings.fide.com/download/players_list_xml_legacy.zip")
     import_list("players_list_xml.xml")
 
 

@@ -71,7 +71,7 @@ def sanitize_xml(file_path: str) -> None:
         with open(file_path, 'w', encoding='utf-8') as file:
             file.write(sanitized_content)
     except Exception as e:
-        logging.error(f"Error sanitizing XML file {file_path}: {e}")
+        logging.exception(f"Error sanitizing XML file {file_path}: {e}")
         raise
 
 
@@ -82,7 +82,7 @@ def get_page_url(tournamentid: str | int) -> str | None:
         res = requests.get(url, headers=HEADERS, timeout=10)
         res.raise_for_status()
     except Exception as e:
-        logging.error(f"Error fetching tournament page {tournamentid}: {e}")
+        logging.exception(f"Error fetching tournament page {tournamentid}: {e}")
         return None
 
     soup = BeautifulSoup(res.text, "html.parser")
@@ -148,10 +148,10 @@ def process_tournament(args: tuple[str, str | None]) -> None:
         tree = ET.parse(tournament_file)
         root = tree.getroot()
     except ET.ParseError as e:
-        logging.error(f"Failed to parse XML file {tournament_file}: {e}")
+        logging.exception(f"Failed to parse XML file {tournament_file}: {e}")
         return
     except Exception as e:
-        logging.error(f"Unexpected error processing XML file {tournament_file}: {e}")
+        logging.exception(f"Unexpected error processing XML file {tournament_file}: {e}")
         return
 
     if not url:
@@ -174,7 +174,7 @@ def process_tournament(args: tuple[str, str | None]) -> None:
             month = start_date_node.attrib['month'].strip()
             day = start_date_node.attrib['day'].strip()
             start = datetime.strptime(f"{year}-{month}-{day}", "%Y-%m-%d")
-        except:
+        except Exception:
             pass
 
     end_date_node = root.find(".//end_date")
@@ -184,7 +184,7 @@ def process_tournament(args: tuple[str, str | None]) -> None:
             month = end_date_node.attrib['month'].strip()
             day = end_date_node.attrib['day'].strip()
             end = datetime.strptime(f"{year}-{month}-{day}", "%Y-%m-%d")
-        except:
+        except Exception:
             pass
 
     url = url or ""
@@ -285,7 +285,7 @@ def scrap_tournaments(year: int) -> list[list[str]] | None:
         res = requests.get(url, headers=HEADERS, timeout=10)
         res.raise_for_status()
     except Exception as e:
-        logging.error("Request error:", e)
+        logging.exception(f"Request error: {e}")
         return
     res.encoding = "ISO-8859-2"
 
@@ -352,7 +352,7 @@ def scrap_tournaments(year: int) -> list[list[str]] | None:
 
 def extract_scrapped_data(rows: list[list[str]] | None) -> None:
     for row in rows:
-        lp, tournamentid, regeistered, date, card, place, arbiter, url = row
+        _, tournamentid, _, _, _, _, _, url = row
         if int(tournamentid) in IMPORTED_TOURNAMENTS:
             continue
         file = ""
@@ -366,7 +366,7 @@ def extract_scrapped_data(rows: list[list[str]] | None) -> None:
                     if chunk:
                         output.write(chunk)
             file = filename
-        except:
+        except Exception:
             try:
                 res = requests.get(f"http://www.cr-pzszach.pl/ew/ew/swsswd/{tournamentid}.swdx", headers=HEADERS)
                 res.raise_for_status()
@@ -377,7 +377,7 @@ def extract_scrapped_data(rows: list[list[str]] | None) -> None:
                         if chunk:
                             output.write(chunk)
                 file = filename
-            except:
+            except Exception:
                 logging.warning(f"Cannot download {tournamentid} file")
 
         if file:

@@ -31,6 +31,6 @@ jobs:
           args: >
             -Dsonar.projectKey=KulAndy_bazaszachowa-tools
             -Dsonar.organization=kulandy
-            -Dsonar.sources=cpp/src,python,sql
+            -Dsonar.sources=cpp/src,python
             -Dsonar.exclusions=**/cpp/src/chess-library/**,**/python/chess_scrappers/**
           projectBaseDir: .

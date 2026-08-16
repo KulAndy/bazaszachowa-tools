@@ -98,7 +98,7 @@ if __name__ == '__main__':
 
     with open(PGN_DIR / "insert.sql") as f:
         for line in f.readlines():
-            if not "0x," in line:
+            if "0x," not in line:
                 curs.execute(line)
 
     today = datetime.today()
@@ -131,7 +131,7 @@ if __name__ == '__main__':
                 and all - black == 0:
             break
         elif i == RETRIES - 1:
-            logging.error(f"Unable to normalize")
+            logging.error("Unable to normalize")
             sys.exit(1)
 
     for i in range(RETRIES):

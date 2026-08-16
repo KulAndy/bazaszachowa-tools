@@ -30,7 +30,7 @@ def get_month_year_list(start_date_str):
 
 
 def extract_list(url):
-    file_name, headers = urllib.request.urlretrieve(url)
+    file_name, _ = urllib.request.urlretrieve(url)
     with zipfile.ZipFile(file_name, "r") as zip_ref:
         zip_ref.extractall()
 
@@ -154,7 +154,7 @@ def import_list(filename):
 
 def xml_addr(month_name, year_short):
     return [
-        f"http://ratings.fide.com/download/standard_{month_name[:3].lower()}{year_short}frl_xml.zip",
+        f"https://ratings.fide.com/download/standard_{month_name[:3].lower()}{year_short}frl_xml.zip",
         f"standard_{month_name[:3].lower()}{year_short}frl_xml.xml",
     ]
 

@@ -26,6 +26,7 @@ IGNORE_LINKS = [
     "/wiki/Szachy",
     "/wiki/Zwi%C4%85zek_Socjalistycznych_Republik_Socjalistycznych"
 ]
+BS4_PARSER = "html.parser"
 
 visited = set()
 
@@ -44,7 +45,7 @@ def fetch(url):
         return r
 
     except Exception as e:
-        log.error(f"Request error {url} -> {e}")
+        log.exception(f"Request error {url} -> {e}")
         return None
 
 
@@ -65,7 +66,7 @@ def scrap_wiki(url, base_url, depth=0):
     if not response:
         return []
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(response.text, BS4_PARSER)
 
     substitutions = []
 
@@ -112,7 +113,7 @@ def scrap_wiki(url, base_url, depth=0):
         if not response:
             continue
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        soup = BeautifulSoup(response.text, BS4_PARSER)
 
         pl_title_tag = soup.find("h1")
         polish_title = pl_title_tag.get_text(strip=True) if pl_title_tag else None
@@ -137,7 +138,7 @@ def scrap_wiki(url, base_url, depth=0):
         if not en_resp:
             continue
 
-        soup = BeautifulSoup(en_resp.text, "html.parser")
+        soup = BeautifulSoup(en_resp.text, BS4_PARSER)
 
         en_title_tag = soup.find("h1")
         english_title = en_title_tag.get_text(strip=True) if en_title_tag else None

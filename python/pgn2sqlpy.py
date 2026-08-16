@@ -66,7 +66,7 @@ def main():
                 if game is None:
                     break
 
-                game_data: Dict[str, int | None | str] = {key: "null" for key in pgn_keys}
+                game_data: Dict[str, int | None | str] = dict.fromkeys(pgn_keys, None)
                 game_data["Year"] = game_data["Month"] = game_data["Day"] = None
                 moves_blob = bytearray()
 
@@ -80,7 +80,7 @@ def main():
                                 except ValueError:
                                     game_data[key] = None
                             elif key in ("Event", "Site", "Round", "White", "Black", "Result"):
-                                game_data[key] = value if value != "?" else "?"
+                                game_data[key] = value if value else "?"
                             elif key == "Date":
                                 year, month, day = parse_date(value)
                                 if year:

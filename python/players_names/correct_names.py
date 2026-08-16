@@ -97,11 +97,8 @@ if __name__ == "__main__":
                         if i < len(rows) - 2:
                             if not re.search(f"^{rows[i][1]}", rows[i + 2][1], re.IGNORECASE) \
                                     and not re.search(f"^{current_player}", rows[i + 2][1], re.IGNORECASE):
-                                if re.search("[0-9]+$", rows[i][1], re.IGNORECASE):
+                                if re.search("\d+$", rows[i][1], re.IGNORECASE) or "," in next_player:
                                     output.write(get_update_sql(TABLE, current_id, next_id))
-                                elif "," in next_player:
-                                    output.write(get_update_sql(TABLE, current_id, next_id))
-
                         else:
                             output.write(get_update_sql(TABLE, current_id, next_id))
 

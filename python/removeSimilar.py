@@ -50,7 +50,7 @@ def fetch_game_details(table: str, ids: list[str]) -> list[tuple]:
     connection = db_pool.get_connection()
     cursor = connection.cursor(buffered=True)
     try:
-        ids = re.sub(r"\[|\]", "", ",".join(ids))
+        ids = re.sub(r"[\[\]]", "", ",".join(ids))
         sql = fr"""
         SELECT {table}_games.id, moves_blob,
         a1.id as whiteID, REGEXP_REPLACE(a1.fullname, "[\\s,.]+", " ") as white,
@@ -159,7 +159,7 @@ def process_year(year, table, lock, duplicates):
 
                 connection.commit()
             except Exception as e:
-                logging.error(e)
+                logging.exception(e)
             finally:
                 cursor.close()
                 connection.close()
@@ -170,18 +170,18 @@ def process_year(year, table, lock, duplicates):
             if local_duplicates == 0:
                 unique_years.add(year)
     except Exception as e:
-        logging.error(traceback.format_exc())
-        logging.error(f"Error processing year {year}: {str(e)}")
+        logging.exception(traceback.format_exc())
+        logging.exception(f"Error processing year {year}: {str(e)}")
 
 
-def main(TABLE) -> int | None:
+def main(table) -> int | None:
     global db_pool
     init_db_pool()
     try:
 
         connection = db_pool.get_connection()
         cursor = connection.cursor()
-        cursor.execute(f"SELECT DISTINCT Year FROM `{TABLE}_games`")
+        cursor.execute(f"SELECT DISTINCT Year FROM `{table}_games`")
         years = [item for sublist in cursor.fetchall() for item in sublist]
         years.sort(reverse=True)
         cursor.close()
@@ -190,23 +190,23 @@ def main(TABLE) -> int | None:
         lock = threading.Lock()
         with ThreadPoolExecutor(max_workers=POOL_SIZE) as executor:
             futures = [
-                executor.submit(process_year, year, TABLE, lock, duplicates)
+                executor.submit(process_year, year, table, lock, duplicates)
                 for year in years
             ]
             for future in as_completed(futures):
                 try:
                     future.result()
                 except Exception as e:
-                    logging.error(traceback.format_exc())
-                    logging.error(f"Error in processing: {str(e)}")
+                    logging.exception(traceback.format_exc())
+                    logging.exception(f"Error in processing: {str(e)}")
 
         if duplicates[0] > 0:
-            duplicates[0] += main(TABLE)
+            duplicates[0] += main(table)
 
         return duplicates[0]
     except Exception as e:
-        logging.error(traceback.format_exc())
-        logging.error(f"Error in main process: {str(e)}")
+        logging.exception(traceback.format_exc())
+        logging.exception(f"Error in main process: {str(e)}")
 
 
 if __name__ == "__main__":

@@ -54,16 +54,14 @@ def process_fullname(fullname):
                     conn.commit()
             return
 
-        fulltext_name = " ".join(map(
-            lambda x: f"+{x}",
-            filter(
-                lambda x: len(x) > 1,
-                map(
-                    lambda x: re.sub(r"[^\d\sa-z]", "", x.strip()),
-                    parts
-                )
-            ),
-        ))
+        fulltext_name = " ".join([
+            f"+{x}"
+            for x in [
+                    re.sub(r"[^\d\sa-z]", "", x.strip())
+                    for x in parts
+                ]
+            if len(x) > 1
+        ])
 
         sql = """
                 SELECT distinct name FROM fide_players 

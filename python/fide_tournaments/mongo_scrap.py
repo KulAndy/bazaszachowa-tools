@@ -39,6 +39,7 @@ session.headers.update({
     "X-Requested-With": "XMLHttpRequest",
 })
 
+BS4_PARSER = "html.parser"
 
 def get_tournaments_in_base(country: str) -> list[int]:
     docs = coll.find({"country": country}, {"_id": 1})
@@ -50,17 +51,17 @@ def get_federations() -> set[str]:
     res = session.get(url)
     html = res.text
 
-    soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(html, BS4_PARSER)
     select = soup.select_one("#select_country")
 
     if not select:
         raise RuntimeError("select#select_country not found")
 
-    values = set([
+    values = {
         opt.get("value").strip()
         for opt in select.select("option")
         if opt.get("value", "").strip()
-    ])
+    }
     values.remove("all")
     return values
 
@@ -81,7 +82,7 @@ def scrap_tournament(event_id: int | str) -> None:
     res = session.get(url)
     res.raise_for_status()
 
-    soup = BeautifulSoup(res.text, "html.parser")
+    soup = BeautifulSoup(res.text, BS4_PARSER)
     table = soup.select_one("table.table2")
 
     if not table:
@@ -92,7 +93,7 @@ def scrap_tournament(event_id: int | str) -> None:
         cells = row.select("td")
         if not cells or len(cells) < 9:
             continue
-        player_id, name, fed, title, *_ = [c.get_text(strip=True) for c in cells]
+        player_id, *_ = [c.get_text(strip=True) for c in cells]
         if player_id:
             players.append(int(player_id))
 
@@ -124,7 +125,7 @@ def scrap_country_period(federation: str, period: str) -> None:
         event_id, href, site, system, start, *rest = row
         event_id = int(event_id)
         logging.debug(href)
-        event = BeautifulSoup(href, "html.parser").get_text(strip=True)
+        event = BeautifulSoup(href, BS4_PARSER).get_text(strip=True)
         start_date = None
         for template in ["%d.%m.%Y", "%Y.%m.%d", "%Y-%m-%d"]:
             try:

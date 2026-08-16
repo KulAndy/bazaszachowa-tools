@@ -111,10 +111,7 @@ def extract_tournament_links(xml_file: str) -> set[str]:
         for match in re.findall(r'https?://[^\s"\'<>]+', xml_text):
             url = match.rstrip(".,);]")
 
-            if "lichess" in url:
-                links.add(url)
-
-            elif "livechesscloud" in url:
+            if "lichess" in url or "livechesscloud" in url:
                 links.add(url)
 
     except Exception as e:

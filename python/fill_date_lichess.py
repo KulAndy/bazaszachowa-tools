@@ -37,11 +37,6 @@ def parse_broadcast_url(
         Tuple[Literal["round"], str, str, str] |
         None
 ):
-    """
-    Returns:
-      ("tournament", tournament_id)
-      ("round", tournament_slug, round_slug, round_id)
-    """
     parts = urlparse(url).path.strip("/").split("/")
 
     if len(parts) == 2 and parts[0] == "broadcast":
@@ -71,7 +66,7 @@ def fetch_round(tournament_slug: str, round_slug: str, round_id: str) -> dict:
     return r.json()
 
 
-def extract_tournament_date(data: dict):
+def extract_tournament_date(data: dict) -> date | None:
     tour = data.get("tour", {})
     dates = tour.get("dates")
     if dates:
@@ -81,7 +76,7 @@ def extract_tournament_date(data: dict):
     return None
 
 
-def extract_round_date(data: dict):
+def extract_round_date(data: dict) -> date | None:
     rnd = data.get("round", {})
     if rnd.get("startsAt"):
         return ms_to_date(rnd["startsAt"])
@@ -92,19 +87,18 @@ def extract_round_date(data: dict):
 
 # ---------------- Study parsing ----------------
 
-def parse_study_url(url: str):
-    """
-    Returns:
-      ("study", study_id)
-      ("chapter", study_id, chapter_id)
-    """
+def parse_study_url(url: str) -> (
+    Tuple[Literal["study"], str] |
+    Tuple[Literal["chapter"], str, str] |
+    None
+):
     parts = urlparse(url).path.strip("/").split("/")
 
     if len(parts) == 2 and parts[0] == "study":
-        return ("study", parts[1])
+        return "study", parts[1]
 
     if len(parts) == 3 and parts[0] == "study":
-        return ("chapter", parts[1], parts[2])
+        return "chapter", parts[1], parts[2]
 
     return None
 

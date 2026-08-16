@@ -29,7 +29,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.projectKey=KulAndy_chess-scrappers
+            -Dsonar.projectKey=KulAndy_bazaszachowa-tools
             -Dsonar.organization=kulandy
             -Dsonar.sources=cpp/src,python,sql
             -Dsonar.exclusions=**/cpp/src/chess-library/**,**/python/chess_scrappers/**

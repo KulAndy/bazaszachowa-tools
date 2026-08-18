@@ -1,7 +1,7 @@
 #ifndef BASIC_VISITOR_H
 #define BASIC_VISITOR_H
 
-#include "chess-library/include/chess.hpp"
+#include <chess-library/include/chess.hpp>
 #include <iostream>
 #include <string_view>
 

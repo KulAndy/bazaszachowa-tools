@@ -7,7 +7,7 @@
 #include <sstream>
 #include <stdexcept>
 
-#include "chess-library/include/chess.hpp"
+#include <chess-library/include/chess.hpp>
 
 using namespace chess;
 using namespace std;

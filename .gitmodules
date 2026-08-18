@@ -1,6 +1,6 @@
-[submodule "cpp/src/chess-library"]
-	path = cpp/src/chess-library
-	url = https://github.com/Disservin/chess-library.git
 [submodule "python/chess_scrappers"]
 	path = python/chess_scrappers
 	url = https://github.com/KulAndy/chess-scrappers.git
+[submodule "cpp/chess-library"]
+	path = cpp/chess-library
+	url = https://github.com/Disservin/chess-library.git

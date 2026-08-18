@@ -47,6 +47,10 @@ else()
     message(FATAL_ERROR "Unsupported OS")
 endif()
 
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 add_executable(pgn2sql ${SOURCE_DIR}/pgn2sql.cpp)
 add_executable(lichess_classify ${SOURCE_DIR}/lichess_classify.cpp)
 add_executable(remote2pgn ${SOURCE_DIR}/remote2pgn.cpp)

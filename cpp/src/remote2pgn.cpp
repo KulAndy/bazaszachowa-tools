@@ -1,6 +1,6 @@
-#include "chess-library/include/chess.hpp"
 #include "mysql_settings.hpp"
 #include <array>
+#include <chess-library/include/chess.hpp>
 #include <condition_variable>
 #include <cstddef>
 #include <fstream>

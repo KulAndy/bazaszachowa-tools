@@ -1,0 +1,31 @@
+name: C++ workflow on FreeBSD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-freebsd:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Build
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: '14.3'
+          run: |
+            pkg update
+            pkg install -y cmake gcc mysql80-client
+            cmake -S cpp -B cpp/build
+            cmake --build cpp/build --parallel

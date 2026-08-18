@@ -10,5 +10,5 @@ SETTINGS = {
         "user": "user",
         "password": "pass",
         "database": "database",
-    }
+    },
 }

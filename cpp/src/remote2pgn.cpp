@@ -120,7 +120,7 @@ void processBatch(vector<GameData> &&games, const string &year) {
   }
 
   for (auto &game : games) {
-    processGame(move(game), output);
+    processGame(std::move(game), output);
   }
 
   output.close();
@@ -284,7 +284,7 @@ void processYear(const string &table, const string &year) {
       game.movesBlob = (bind[12].is_null && *(bind[12].is_null))
                            ? ""
                            : string(buffers[12], lengths[12]);
-      batchGames.push_back(move(game));
+      batchGames.push_back(std::move(game));
     }
 
     mysql_free_result(result);
@@ -294,7 +294,7 @@ void processYear(const string &table, const string &year) {
     }
 
     if (!batchGames.empty()) {
-      processBatch(move(batchGames), year);
+      processBatch(std::move(batchGames), year);
     }
 
     offset += batchSize;

@@ -13,9 +13,11 @@
 #include <set>
 #include <sstream>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 using namespace std;
+using mysql_is_null_t = std::remove_pointer_t<decltype(MYSQL_BIND{}.is_null)>;
 
 const unsigned int detected_threads = thread::hardware_concurrency();
 const unsigned int N_THREADS = max(2u, detected_threads) - 1;
@@ -224,7 +226,7 @@ void processYear(const string &table, const string &year) {
       bind[i].buffer = buffers[i];
       bind[i].buffer_length = 1024;
       bind[i].length = &lengths[i];
-      bind[i].is_null = new bool(false);
+      bind[i].is_null = new mysql_is_null_t(false);
     }
 
     if (mysql_stmt_bind_result(stmt, bind.data())) {

@@ -32,17 +32,32 @@ if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(STATUS "Configuring for Linux")
 
-    include_directories(
-        /usr/include
-        /usr/include/mysql
-    )
+    if(EXISTS "/etc/alpine-release")
+        message(STATUS "Configuring for Alpine")
 
-    link_directories(
-        /usr/lib/x86_64-linux-gnu
-    )
+        include_directories(
+            /usr/include
+            /usr/include/mysql
+        )
 
-    set(MYSQL_LIB mysqlclient)
+        link_directories(
+            /usr/lib
+        )
 
+        set(MYSQL_LIB mysqlclient)
+
+    else()
+        include_directories(
+            /usr/include
+            /usr/include/mysql
+        )
+
+        link_directories(
+            /usr/lib/x86_64-linux-gnu
+        )
+
+        set(MYSQL_LIB mysqlclient)
+    endif()
 else()
     message(FATAL_ERROR "Unsupported OS")
 endif()

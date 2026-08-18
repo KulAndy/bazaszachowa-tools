@@ -186,7 +186,7 @@ int main(int argc, char *argv[]) {
   int total_range = max_id - min_id + 1;
   int chunk_size = (total_range + N_THREADS - 1) / N_THREADS;
 
-  vector<jthread> threads;
+  vector<thread> threads;
   atomic total_updated = 0;
 
   for (int i = 0; i < N_THREADS; ++i) {
@@ -194,6 +194,12 @@ int main(int argc, char *argv[]) {
     int end_id = min(start_id + chunk_size - 1, max_id);
     threads.emplace_back(classify_worker, cref(table), cref(eco_lines),
                          start_id, end_id + 1, ref(total_updated));
+  }
+
+  for (auto &t : threads) {
+    if (t.joinable()) {
+      t.join();
+    }
   }
 
   cout << "Done. Updated: " << total_updated << "\n";

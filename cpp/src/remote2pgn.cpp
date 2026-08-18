@@ -349,7 +349,7 @@ int main(int argc, char *argv[]) {
   mysql_free_result(result);
   mysql_close(conn);
 
-  vector<jthread> workers;
+  vector<thread> workers;
   workers.reserve(N_THREADS);
 
   for (const auto &year : years) {
@@ -361,7 +361,7 @@ int main(int argc, char *argv[]) {
       }
       workers.clear();
     }
-    workers.emplace_back(processYear, std::cref(table), std::cref(year));
+    workers.emplace_back(processYear, cref(table), cref(year));
   }
 
   for (auto &t : workers) {

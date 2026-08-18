@@ -6,7 +6,7 @@ mydb = mysql.connector.connect(**SETTINGS["mysql"], autocommit=True)
 curs = mydb.cursor()
 
 
-def main() -> None:
+def main(replace: bool = False) -> None:
     sql = """
     DELETE FROM `subtitutions` 
     WHERE substitute IN ("Radzikowska, Krystyna","Hook, Bill","Loyd, Sam", "Pilnik, Hermann", "Planinc, Albin", "Sanguinetti, Raul");
@@ -68,28 +68,29 @@ def main() -> None:
     INNER JOIN subtitutions
     ON poland_players.fullname = subtitutions.substitute
 """
-    # sql += """;
-    # START TRANSACTION;
-    # DELETE FROM all_players;
-    # INSERT IGNORE INTO all_players(id, fullname)
-    # SELECT pom.id, fullname FROM (SELECT WhiteID as id FROM all_games
-    # UNION DISTINCT
-    # SELECT BlackID as id FROM all_games) as pom
-    # INNER JOIN players
-    # on pom.id = players.id;
-    # COMMIT
-    # """
-    # sql += """;
-    # START TRANSACTION;
-    # DELETE FROM poland_players;
-    # INSERT IGNORE INTO poland_players(id, fullname)
-    # SELECT pom.id, fullname FROM (SELECT WhiteID as id FROM poland_games
-    # UNION DISTINCT
-    # SELECT BlackID as id FROM poland_games) as pom
-    # INNER JOIN players
-    # on pom.id = players.id;
-    # COMMIT
-    # """
+    if replace:
+        sql += """;
+        START TRANSACTION;
+        DELETE FROM all_players;
+        INSERT IGNORE INTO all_players(id, fullname)
+        SELECT pom.id, fullname FROM (SELECT WhiteID as id FROM all_games
+        UNION DISTINCT
+        SELECT BlackID as id FROM all_games) as pom
+        INNER JOIN players
+        on pom.id = players.id;
+        COMMIT
+        """
+        sql += """;
+        START TRANSACTION;
+        DELETE FROM poland_players;
+        INSERT IGNORE INTO poland_players(id, fullname)
+        SELECT pom.id, fullname FROM (SELECT WhiteID as id FROM poland_games
+        UNION DISTINCT
+        SELECT BlackID as id FROM poland_games) as pom
+        INNER JOIN players
+        on pom.id = players.id;
+        COMMIT
+        """
     for query in sql.split(";"):
         curs.execute(query)
 

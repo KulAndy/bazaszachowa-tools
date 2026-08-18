@@ -121,7 +121,7 @@ def scrap_country_period(federation: str, period: str) -> None:
     for row in data["data"]:
         logging.debug(row)
         logging.debug(len(row))
-        event_id, href, site, system, start, *rest = row
+        event_id, href, _, _, start, *_ = row
         event_id = int(event_id)
         logging.debug(href)
         event = BeautifulSoup(href, BS4_PARSER).get_text(strip=True)

@@ -1,12 +1,18 @@
 import re
 from datetime import UTC, date, datetime
-from typing import Literal
+from typing import Any, Literal, TypedDict, cast
 from urllib.parse import urlparse
 
 import mysql.connector
 import requests
 
-from settings import SETTINGS
+from .settings import SETTINGS
+
+
+class SiteRow(TypedDict):
+    siteid: int
+    site: str
+
 
 # ---------------- Lichess API ----------------
 
@@ -53,22 +59,22 @@ def parse_broadcast_url(
     return None
 
 
-def fetch_tournament(tournament_id: str) -> dict:
+def fetch_tournament(tournament_id: str) -> dict[str, Any]:
     r = requests.get(f"{BROADCAST_API_BASE}/{tournament_id}", timeout=15)
     r.raise_for_status()
-    return r.json()
+    return cast(dict[str, Any], r.json())
 
 
-def fetch_round(tournament_slug: str, round_slug: str, round_id: str) -> dict:
+def fetch_round(tournament_slug: str, round_slug: str, round_id: str) -> dict[str, Any]:
     r = requests.get(
         f"{BROADCAST_API_BASE}/{tournament_slug}/{round_slug}/{round_id}",
         timeout=15,
     )
     r.raise_for_status()
-    return r.json()
+    return cast(dict[str, Any], r.json())
 
 
-def extract_tournament_date(data: dict) -> date | None:
+def extract_tournament_date(data: dict[str, Any]) -> date | None:
     tour = data.get("tour", {})
     dates = tour.get("dates")
     if dates:
@@ -78,7 +84,7 @@ def extract_tournament_date(data: dict) -> date | None:
     return None
 
 
-def extract_round_date(data: dict) -> date | None:
+def extract_round_date(data: dict[str, Any]) -> date | None:
     rnd = data.get("round", {})
     if rnd.get("startsAt"):
         return ms_to_date(rnd["startsAt"])
@@ -152,7 +158,7 @@ WHERE Day IS NULL
   )
 """)
 
-rows = cur.fetchall()
+rows = cast(list[SiteRow], cur.fetchall())
 updates = []
 
 for row in rows:
@@ -163,65 +169,72 @@ for row in rows:
     try:
         # ---- Broadcast (direct) ----
         parsed_broadcast = parse_broadcast_url(url)
-        if parsed_broadcast:
-            if parsed_broadcast[0] == "tournament":
-                _, tournament_id = parsed_broadcast
+        match parsed_broadcast:
+            case ("tournament", tournament_id):
                 data = fetch_tournament(tournament_id)
                 game_date = extract_tournament_date(data)
-            else:
-                _, tour_slug, round_slug, round_id = parsed_broadcast
+
+            case ("round", tour_slug, round_slug, round_id):
                 data = fetch_round(tour_slug, round_slug, round_id)
                 game_date = extract_round_date(data)
 
-            if game_date:
-                updates.append((game_date.year, game_date.month, game_date.day, siteid))
-            else:
-                print("No broadcast date", url)
+            case _:
+                game_date = None
+
+        if game_date:
+            updates.append((game_date.year, game_date.month, game_date.day, siteid))
+        else:
+            print("No broadcast date", url)
             continue
 
         # ---- Study ----
         parsed_study = parse_study_url(url)
-        if parsed_study:
-            try:
-                if parsed_study[0] == "study":
-                    _, study_id = parsed_study
+
+        match parsed_study:
+            case ("study", study_id):
+                try:
                     pgn = fetch_study_pgn(study_id)
-                else:
-                    _, study_id, chapter_id = parsed_study
+                except requests.HTTPError:
+                    pgn = ""
+
+            case ("chapter", study_id, chapter_id):
+                try:
                     pgn = fetch_study_pgn(study_id, chapter_id)
+                except requests.HTTPError:
+                    pgn = ""
 
-                date_tuple = extract_pgn_date(pgn)
-                if date_tuple:
-                    updates.append((*date_tuple, siteid))
-                    continue
-                else:
-                    print("No PGN date, trying redirect", url)
+            case _:
+                pgn = ""
 
-            except requests.HTTPError:
-                print("PGN not found, trying redirect", url)
+        if pgn:
+            date_tuple = extract_pgn_date(pgn)
 
-            # ---- Fallback: follow redirect and retry as broadcast ----
-            final_url = resolve_final_url(url)
-            parsed_broadcast = parse_broadcast_url(final_url)
+            if date_tuple:
+                updates.append((*date_tuple, siteid))
+                continue
 
-            if parsed_broadcast:
-                if parsed_broadcast[0] == "tournament":
-                    _, tournament_id = parsed_broadcast
-                    data = fetch_tournament(tournament_id)
-                    game_date = extract_tournament_date(data)
-                else:
-                    _, tour_slug, round_slug, round_id = parsed_broadcast
-                    data = fetch_round(tour_slug, round_slug, round_id)
-                    game_date = extract_round_date(data)
+        print("No PGN date, trying redirect", url)
 
-                if game_date:
-                    updates.append(
-                        (game_date.year, game_date.month, game_date.day, siteid)
-                    )
-                else:
-                    print("No broadcast date after redirect", final_url)
-            else:
-                print("Redirect did not lead to broadcast", final_url)
+        # ---- Fallback: follow redirect and retry as broadcast ----
+        final_url = resolve_final_url(url)
+        redirected_broadcast = parse_broadcast_url(final_url)
+
+        match redirected_broadcast:
+            case ("tournament", tournament_id):
+                data = fetch_tournament(tournament_id)
+                game_date = extract_tournament_date(data)
+
+            case ("round", tour_slug, round_slug, round_id):
+                data = fetch_round(tour_slug, round_slug, round_id)
+                game_date = extract_round_date(data)
+
+            case _:
+                game_date = None
+
+        if game_date:
+            updates.append((game_date.year, game_date.month, game_date.day, siteid))
+        else:
+            print("No broadcast date after redirect", final_url)
 
     except requests.HTTPError as e:
         print(f"HTTP error {url}: {e}")

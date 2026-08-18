@@ -1,13 +1,12 @@
 import mysql.connector
 
-from settings import SETTINGS
+from ...settings import SETTINGS
 
-mydb = mysql.connector.connect(**SETTINGS["mysql"])
-mydb.autocommit = True
+mydb = mysql.connector.connect(**SETTINGS["mysql"], autocommit=True)
 curs = mydb.cursor()
 
 
-def main():
+def main() -> None:
     sql = """
     DELETE FROM `subtitutions` 
     WHERE substitute IN ("Radzikowska, Krystyna","Hook, Bill","Loyd, Sam", "Pilnik, Hermann", "Planinc, Albin", "Sanguinetti, Raul");

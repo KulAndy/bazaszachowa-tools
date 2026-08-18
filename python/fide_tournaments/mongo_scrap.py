@@ -2,7 +2,9 @@ import json
 import logging
 import re
 import time
+from collections.abc import Mapping
 from datetime import date, datetime
+from typing import Any
 from urllib.parse import quote_plus
 
 import requests
@@ -18,7 +20,7 @@ MONGO_URI = (
     f"{settings.SETTINGS['mongo']['host']}:27017/{settings.SETTINGS['mongo']['database']}"
 )
 MONGO_COLLECTION = "fide_tournaments"
-client = MongoClient(MONGO_URI)
+client: MongoClient[Mapping[str, Any]] = MongoClient(MONGO_URI)
 db = client[settings.SETTINGS["mongo"]["database"]]
 coll = db[MONGO_COLLECTION]
 
@@ -60,12 +62,14 @@ def get_federations() -> set[str]:
     if not select:
         raise RuntimeError("select#select_country not found")
 
-    values = {
-        opt.get("value").strip()
-        for opt in select.select("option")
-        if opt.get("value", "").strip()
-    }
-    values.remove("all")
+    values = set()
+
+    for opt in select.select("option"):
+        value = opt.get("value")
+        if isinstance(value, str) and value.strip():
+            values.add(value.strip())
+
+    values.discard("all")
     return values
 
 
@@ -129,7 +133,15 @@ def scrap_country_period(federation: str, period: str) -> None:
             except ValueError:
                 pass
 
-        logging.info("|".join([str(event_id), event, start_date.strftime("%Y-%m-%d")]))
+        logging.info(
+            "|".join(
+                [
+                    str(event_id),
+                    event,
+                    start_date.strftime("%Y-%m-%d") if start_date is not None else "",
+                ]
+            )
+        )
         if start_date and event_id not in IMPORTED_TOURNAMENTS:
             coll.update_one(
                 {"_id": int(event_id)},

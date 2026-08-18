@@ -9,10 +9,17 @@ from datetime import datetime
 
 import mysql.connector
 
-from settings import SETTINGS
+from ..settings import SETTINGS
 
 
-def get_month_year_list(start_date_str):
+def get_text(player: ET.Element, tag: str) -> str:
+    element = player.find(tag)
+    if element is None or element.text is None:
+        raise ValueError(f"Missing XML field: {tag}")
+    return element.text
+
+
+def get_month_year_list(start_date_str: str) -> list[list[str]]:
     start_date = datetime.strptime(start_date_str, "%d-%m-%Y")
     current_date = datetime.now()
 
@@ -31,13 +38,13 @@ def get_month_year_list(start_date_str):
     return month_year_list
 
 
-def extract_list(url):
+def extract_list(url: str) -> None:
     file_name, _ = urllib.request.urlretrieve(url)
     with zipfile.ZipFile(file_name, "r") as zip_ref:
         zip_ref.extractall()
 
 
-def import_list(filename):
+def import_list(filename: str) -> None:
     tree = ET.parse(filename)
     root = tree.getroot()
 
@@ -67,16 +74,16 @@ def import_list(filename):
     border_params = []
 
     for player in root.findall("player"):
-        fideid = player.find("fideid").text
-        name = player.find("name").text
-        country = player.find("country").text
-        sex = player.find("sex").text
-        title = player.find("title").text
-        w_title = player.find("w_title").text
-        o_title = player.find("o_title").text
-        birthday = player.find("birthday").text
+        fideid = get_text(player, "fideid")
+        name = get_text(player, "name")
+        country = get_text(player, "country")
+        sex = get_text(player, "sex")
+        title = get_text(player, "title")
+        w_title = get_text(player, "w_title")
+        o_title = get_text(player, "o_title")
+        birthday = get_text(player, "birthday")
 
-        rating = player.find("rating").text
+        rating = get_text(player, "rating")
 
         try:
             rating_int = int(rating)
@@ -84,15 +91,23 @@ def import_list(filename):
             rating_int = 0
 
         try:
-            rapid_rating = player.find("rapid_rating").text
-            rapid_rating_int = int(rapid_rating)
+            rapid_rating = (
+                get_text(player, "rapid_rating")
+                if player.find("rapid_rating") is not None
+                else None
+            )
+            rapid_rating_int = int(rapid_rating) if rapid_rating is not None else None
         except (ValueError, AttributeError):
             rapid_rating = None
             rapid_rating_int = None
 
         try:
-            blitz_rating = player.find("blitz_rating").text
-            blitz_rating_int = int(blitz_rating)
+            blitz_rating = (
+                get_text(player, "blitz_rating")
+                if player.find("blitz_rating") is not None
+                else None
+            )
+            blitz_rating_int = int(blitz_rating) if blitz_rating is not None else None
         except (ValueError, AttributeError):
             blitz_rating = None
             blitz_rating_int = None
@@ -143,14 +158,14 @@ def import_list(filename):
         os.remove(filename)
 
 
-def xml_addr(month_name, year_short):
+def xml_addr(month_name: str, year_short: str) -> list[str]:
     return [
         f"https://ratings.fide.com/download/standard_{month_name[:3].lower()}{year_short}frl_xml.zip",
         f"standard_{month_name[:3].lower()}{year_short}frl_xml.xml",
     ]
 
 
-def main():
+def main() -> None:
     # date_string = get_month_year_list("01-08-2012")
     date_string = get_month_year_list("01-03-2026")
     remote_xml_files = [xml_addr(*i) for i in date_string]

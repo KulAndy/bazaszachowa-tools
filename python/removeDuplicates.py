@@ -4,20 +4,22 @@ import sys
 import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import cast
 
 from mysql.connector import pooling
 
 from .settings import SETTINGS
 
 POOL_SIZE = 8
-db_pool = None
+db_pool: pooling.MySQLConnectionPool | None = None
 
-unique_years = set()
+unique_years: set[int] = set()
 
 
 def init_db_pool() -> None:
     global db_pool
     db_pool = pooling.MySQLConnectionPool(
+        autocommit=True,
         pool_name="my_pool",
         pool_size=POOL_SIZE,
         pool_reset_session=True,
@@ -25,9 +27,18 @@ def init_db_pool() -> None:
     )
 
 
-def fetch_duplicate_games(year: int, table: str) -> list[tuple]:
+def get_db_pool() -> pooling.MySQLConnectionPool:
     global db_pool
-    connection = db_pool.get_connection()
+
+    if db_pool is None:
+        init_db_pool()
+
+    assert db_pool is not None
+    return db_pool
+
+
+def fetch_duplicate_games(year: int, table: str) -> list[tuple[str]]:
+    connection = get_db_pool().get_connection()
     cursor = connection.cursor(buffered=True)
     try:
         sql = f"""
@@ -38,26 +49,25 @@ def fetch_duplicate_games(year: int, table: str) -> list[tuple]:
             HAVING COUNT(*) > 1;
         """
         cursor.execute(sql)
-        return cursor.fetchall()
+        return cast(list[tuple[str]], cursor.fetchall())
     finally:
         cursor.close()
         connection.close()
 
 
-def fetch_game_details(table: str, ids: list[str]) -> list[tuple]:
-    global db_pool
-    connection = db_pool.get_connection()
+def fetch_game_details(table: str, ids: list[str]) -> list[tuple[int, str]]:
+    connection = get_db_pool().get_connection()
     cursor = connection.cursor(buffered=True)
     try:
-        ids = re.sub(r"[\[\]]", "", ",".join(ids))
+        id_list = re.sub(r"[\[\]]", "", ",".join(ids))
         sql = f"""SELECT 
         id, moves_blob 
         FROM {table}_games 
-        WHERE id IN ({ids})
+        WHERE id IN ({id_list})
         ORDER BY moves_blob
 """
         cursor.execute(sql)
-        return cursor.fetchall()
+        return cast(list[tuple[int, str]], cursor.fetchall())
     finally:
         cursor.close()
         connection.close()
@@ -80,8 +90,7 @@ def process_year(
             game_ids = [row[0] for row in rows]
             games = fetch_game_details(table, game_ids)
 
-            connection = db_pool.get_connection()
-            connection.autocommit = True
+            connection = get_db_pool().get_connection()
             cursor = connection.cursor()
 
             update_event_sql = f"""
@@ -158,12 +167,12 @@ def process_year(
         logging.exception(f"Error processing year {year}: {str(e)}")
 
 
-def main(table: str) -> int | None:
+def main(table: str) -> int:
     global db_pool
     init_db_pool()
 
     try:
-        connection = db_pool.get_connection()
+        connection = get_db_pool().get_connection()
         cursor = connection.cursor()
         cursor.execute(f"SELECT DISTINCT Year FROM `{table}_games`")
         years = [item for sublist in cursor.fetchall() for item in sublist]
@@ -194,6 +203,8 @@ def main(table: str) -> int | None:
     except Exception as e:
         logging.exception(traceback.format_exc())
         logging.exception(f"Error in main process: {str(e)}")
+
+    return 0
 
 
 if __name__ == "__main__":

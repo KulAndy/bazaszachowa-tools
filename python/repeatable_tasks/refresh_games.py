@@ -5,6 +5,7 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from typing import cast
 
 import mysql.connector
 
@@ -30,13 +31,23 @@ RETRIES = 5
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--twic", action="store_true", help="Download TWIC games")
-
     parser.add_argument(
-        "--chessbase", action="store_true", help="Download ChessBase games"
+        "--twic",
+        action="store_true",
+        help="Download TWIC games",
     )
 
-    parser.add_argument("--lichess", action="store_true", help="Download Lichess games")
+    parser.add_argument(
+        "--chessbase",
+        action="store_true",
+        help="Download ChessBase games",
+    )
+
+    parser.add_argument(
+        "--lichess",
+        action="store_true",
+        help="Download Lichess games",
+    )
 
     parser.add_argument(
         "--poland",
@@ -45,7 +56,9 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--chessresult", action="store_true", help="Download chess results games"
+        "--chessresult",
+        action="store_true",
+        help="Download chess results games",
     )
 
     args = parser.parse_args()
@@ -54,7 +67,8 @@ if __name__ == "__main__":
         args.twic or args.chessbase or args.lichess or args.poland or args.chessresult
     ):
         parser.error(
-            "at least one of --twic, --chessbase, --lichess, --poland or --chessresult is required"
+            "at least one of --twic, --chessbase, --lichess, "
+            "--poland or --chessresult is required"
         )
     logging.basicConfig(level=logging.ERROR)
     if args.twic:
@@ -85,17 +99,21 @@ if __name__ == "__main__":
         capture_output=True,
     )
 
-    mydb = mysql.connector.connect(**settings.SETTINGS["mysql"], autocommit=True)
+    mydb = mysql.connector.connect(
+        **settings.SETTINGS["mysql"],
+        autocommit=True,
+    )
+
     curs = mydb.cursor()
 
     curs.execute(f"TRUNCATE TABLE `{IMPORT_TABLE}`")
     mydb.commit()
-    mydb.autocommit = True
 
     with open(PGN_DIR / "insert.sql") as f:
         for line in f.readlines():
             if "0x," not in line:
                 curs.execute(line)
+    mydb.commit()
 
     today = datetime.today()
     min_year = today.year
@@ -103,8 +121,10 @@ if __name__ == "__main__":
         min_year = today.year - 1
 
     curs.execute(
-        f"""DELETE FROM `{IMPORT_TABLE}`
-                    WHERE Year < %s""",
+        f"""
+        DELETE FROM `{IMPORT_TABLE}`
+        WHERE Year < %s
+        """,
         (min_year,),
     )
 
@@ -115,23 +135,23 @@ if __name__ == "__main__":
             executor.submit(fill_white, "all")
             executor.submit(fill_black, "all")
 
-        curs.execute(f"""SELECT
-                COUNT(*),
-                COUNT(eventID),
-                COUNT(siteID),
-                COUNT(WhiteID),
-                COUNT(BlackID)
-            FROM `{IMPORT_TABLE}`
-        """)
-        all, events, sites, white, black = curs.fetchone()
-        if (
-            all - events == 0
-            and all - sites == 0
-            and all - white == 0
-            and all - black == 0
-        ):
+        row = curs.fetchone()
+
+        row = curs.fetchone()
+
+        if row is None:
+            logging.error("Unable to retrieve normalization statistics")
+            sys.exit(1)
+
+        total, events, sites, white, black = cast(
+            tuple[int, int, int, int, int],
+            row,
+        )
+
+        if total == events == sites == white == black:
             break
-        elif i == RETRIES - 1:
+
+        if i == RETRIES - 1:
             logging.error("Unable to normalize")
             sys.exit(1)
 
@@ -141,40 +161,106 @@ if __name__ == "__main__":
             cwd=PGN_DIR,
             capture_output=True,
         )
-        curs.execute(f"""SELECT
+
+        curs.execute(
+            f"""
+            SELECT
                 COUNT(*),
                 COUNT(ecoID)
             FROM `{IMPORT_TABLE}`
-        """)
-        all, eco = curs.fetchone()
-        if all - eco == 0:
-            break
-        elif i == RETRIES - 1:
-            logging.error("Unalble to classify")
+            """
+        )
+
+        row = curs.fetchone()
+
+        if row is None:
+            logging.error("Unable to retrieve classification statistics")
             sys.exit(1)
 
-    curs.execute(f"""INSERT INTO `{ALL_GAMES_TABLE}`
-    (`moves_blob`, `eventID`, `siteID`, `Year`, `Month`, `Day`, `Round`,
-    `WhiteID`, `BlackID`, `Result`, `WhiteElo`, `BlackElo`, `ecoID`)
+        total, eco = cast(tuple[int, int], row)
 
-    SELECT `moves_blob`, `eventID`, `siteID`, `Year`, `Month`, `Day`, `Round`,
-    `WhiteID`, `BlackID`, `Result`, `WhiteElo`, `BlackElo`, `ecoID`
-    FROM {IMPORT_TABLE}
-""")
+        if total == eco:
+            break
+
+        if i == RETRIES - 1:
+            logging.error("Unable to classify")
+            sys.exit(1)
+
+    curs.execute(
+        f"""
+        INSERT INTO `{ALL_GAMES_TABLE}`
+        (
+            `moves_blob`,
+            `eventID`,
+            `siteID`,
+            `Year`,
+            `Month`,
+            `Day`,
+            `Round`,
+            `WhiteID`,
+            `BlackID`,
+            `Result`,
+            `WhiteElo`,
+            `BlackElo`,
+            `ecoID`
+        )
+        SELECT
+            `moves_blob`,
+            `eventID`,
+            `siteID`,
+            `Year`,
+            `Month`,
+            `Day`,
+            `Round`,
+            `WhiteID`,
+            `BlackID`,
+            `Result`,
+            `WhiteElo`,
+            `BlackElo`,
+            `ecoID`
+        FROM `{IMPORT_TABLE}`
+        """
+    )
 
     if args.poland:
-        curs.execute(f"""INSERT INTO `{POLAND_GAMES_TABLE}`
-            (`moves_blob`, `eventID`, `siteID`, `Year`, `Month`, `Day`, `Round`,
-            `WhiteID`, `BlackID`, `Result`, `WhiteElo`, `BlackElo`, `ecoID`)
-
-            SELECT `moves_blob`, `eventID`, `siteID`, `Year`, `Month`, `Day`, `Round`,
-            `WhiteID`, `BlackID`, `Result`, `WhiteElo`, `BlackElo`, `ecoID`
-            FROM {IMPORT_TABLE}
-        """)
+        curs.execute(
+            f"""
+            INSERT INTO `{POLAND_GAMES_TABLE}`
+            (
+                `moves_blob`,
+                `eventID`,
+                `siteID`,
+                `Year`,
+                `Month`,
+                `Day`,
+                `Round`,
+                `WhiteID`,
+                `BlackID`,
+                `Result`,
+                `WhiteElo`,
+                `BlackElo`,
+                `ecoID`
+            )
+            SELECT
+                `moves_blob`,
+                `eventID`,
+                `siteID`,
+                `Year`,
+                `Month`,
+                `Day`,
+                `Round`,
+                `WhiteID`,
+                `BlackID`,
+                `Result`,
+                `WhiteElo`,
+                `BlackElo`,
+                `ecoID`
+            FROM `{IMPORT_TABLE}`
+            """
+        )
 
     curs.execute(f"TRUNCATE TABLE `{IMPORT_TABLE}`")
 
-    mydb.commit()
     mydb.close()
 
     shutil.rmtree(PGN_DIR, ignore_errors=True)

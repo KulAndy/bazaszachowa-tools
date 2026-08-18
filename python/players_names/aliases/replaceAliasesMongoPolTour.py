@@ -1,9 +1,11 @@
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import quote_plus
 
 import mysql.connector
 from pymongo import MongoClient
 
-from settings import SETTINGS
+from ...settings import SETTINGS
 
 mydb = mysql.connector.connect(**SETTINGS["mysql"])
 
@@ -13,7 +15,7 @@ MONGO_URI = (
     f"{SETTINGS['mongo']['host']}:27017/{SETTINGS['mongo']['database']}"
 )
 MONGO_COLLECTION = "poland_tournaments"
-mongo = MongoClient(MONGO_URI)
+mongo: MongoClient[Mapping[str, Any]] = MongoClient(MONGO_URI)
 
 mdb = mongo[SETTINGS["mongo"]["database"]]
 coll = mdb[MONGO_COLLECTION]

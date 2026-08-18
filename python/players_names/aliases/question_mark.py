@@ -1,20 +1,20 @@
 import re
+from typing import cast
 
 import mysql.connector
 
-from settings import SETTINGS
+from ...settings import SETTINGS
 
-mydb = mysql.connector.connect(**SETTINGS["mysql"])
-mydb.autocommit = True
+mydb = mysql.connector.connect(**SETTINGS["mysql"], autocommit=True)
 curs = mydb.cursor()
 
 
-def main():
+def main() -> None:
     for table in ["all", "poland"]:
         curs.execute(f"""SELECT fullname
         FROM {table}_players
         WHERE fullname LIKE "%?%" """)
-        rows = curs.fetchall()
+        rows = cast(list[tuple[str]], curs.fetchall())
         for row in rows:
             fullname = row[0]
             curs.execute(
@@ -23,7 +23,7 @@ def main():
             WHERE name LIKE %s """,
                 (re.sub(r"[~?]+", "_", fullname),),
             )
-            found = curs.fetchall()
+            found = cast(list[tuple[str]], curs.fetchall())
             if len(found) == 1:
                 curs.execute(
                     """INSERT IGNORE INTO 
@@ -38,7 +38,7 @@ def main():
                 WHERE name LIKE %s """,
                     (re.sub(r"[,.\s~?]+", "%", fullname),),
                 )
-                found = curs.fetchall()
+                found = cast(list[tuple[str]], curs.fetchall())
                 if len(found) == 1 and len(re.sub(r"[,.\s]+", "", fullname)) == len(
                     re.sub(r"[,.\s]+", "", found[0][0])
                 ):

@@ -4,16 +4,31 @@ import re
 import tempfile
 import traceback
 import zipfile
+from collections.abc import Mapping
 from datetime import datetime
 from io import StringIO
+from typing import Any
 from urllib.parse import quote_plus
 
 import chess.pgn
+import requests as std_requests
 from pymongo import MongoClient
 
 from .. import settings
 from ..chess_scrappers.parser import lichess_download, scrap_livechess
 from . import PGN_DIR
+
+try:
+    from curl_cffi import requests
+
+    session: std_requests.Session | requests.Session[Any] = requests.Session(
+        impersonate="chrome"
+    )
+
+except ImportError:
+    import requests  # type: ignore[no-redef]
+
+    session = requests.Session()
 
 os.makedirs(PGN_DIR, exist_ok=True)
 
@@ -25,7 +40,7 @@ MONGO_URI = (
 
 MONGO_COLLECTION = "poland_tournaments"
 
-client = MongoClient(MONGO_URI)
+client: MongoClient[Mapping[str, Any]] = MongoClient(MONGO_URI)
 db = client[settings.SETTINGS["mongo"]["database"]]
 coll = db[MONGO_COLLECTION]
 
@@ -42,14 +57,6 @@ CR_HEADERS = {
     "Upgrade-Insecure-Requests": "1",
 }
 
-try:
-    from curl_cffi import requests
-
-    session = requests.Session(impersonate="chrome")
-except ImportError:
-    import requests
-
-    session = requests.Session()
 
 session.headers.update(
     {
@@ -81,7 +88,7 @@ def download_swsx(tour_id: int | str) -> bytes | None:
             if res.ok and len(res.content) > 100:
                 return res.content
 
-        except requests.RequestException as e:
+        except std_requests.RequestException as e:
             print("Download error:", url, e)
 
     return None

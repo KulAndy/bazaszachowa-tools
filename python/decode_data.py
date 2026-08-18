@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from typing import cast
 
 import mysql.connector
 from unidecode import unidecode
@@ -24,7 +25,7 @@ def decode_events() -> None:
     curs.execute(r"""SELECT name 
     FROM `chess_events` 
     WHERE `name` REGEXP '[^\\x20-\\x7F]' """)
-    rows = curs.fetchall()
+    rows = cast(list[tuple[str]], curs.fetchall())
 
     decoded = []
     to_replace = []
@@ -74,7 +75,7 @@ def decode_sites() -> None:
     curs.execute(r"""SELECT site
         FROM sites
         WHERE site REGEXP '[^\\x20-\\x7F]' """)
-    rows = curs.fetchall()
+    rows = cast(list[tuple[str]], curs.fetchall())
 
     decoded = []
     to_replace = []
@@ -124,7 +125,7 @@ def decode_players() -> None:
     curs.execute(r"""SELECT fullname 
     FROM `players` 
     WHERE `fullname` REGEXP '[^\\x20-\\x7F]' """)
-    rows = curs.fetchall()
+    rows = cast(list[tuple[str]], curs.fetchall())
 
     decoded = []
     to_replace = []

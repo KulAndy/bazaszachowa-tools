@@ -8,16 +8,23 @@ import zipfile
 
 import mysql.connector
 
-from settings import SETTINGS
+from ..settings import SETTINGS
 
 
-def extract_list(url):
+def get_text(player: ET.Element, tag: str) -> str:
+    element = player.find(tag)
+    if element is None or element.text is None:
+        raise ValueError(f"Missing XML field: {tag}")
+    return element.text
+
+
+def extract_list(url: str) -> None:
     file_name, _ = urllib.request.urlretrieve(url)
     with zipfile.ZipFile(file_name, "r") as zip_ref:
         zip_ref.extractall()
 
 
-def import_list(filename):
+def import_list(filename: str) -> None:
     tree = ET.parse(filename)
     root = tree.getroot()
 
@@ -42,17 +49,17 @@ def import_list(filename):
     )
 
     for player in root.findall("player"):
-        fideid = player.find("fideid").text
-        name = player.find("name").text
-        country = player.find("country").text
-        sex = player.find("sex").text
-        title = player.find("title").text
-        w_title = player.find("w_title").text
-        o_title = player.find("o_title").text
-        rating = player.find("rating").text
-        rapid_rating = player.find("rapid_rating").text
-        blitz_rating = player.find("blitz_rating").text
-        birthday = player.find("birthday").text
+        fideid = get_text(player, "fideid")
+        name = get_text(player, "name")
+        country = get_text(player, "country")
+        sex = get_text(player, "sex")
+        title = get_text(player, "title")
+        w_title = get_text(player, "w_title")
+        o_title = get_text(player, "o_title")
+        rating = get_text(player, "rating")
+        rapid_rating = get_text(player, "rapid_rating")
+        blitz_rating = get_text(player, "blitz_rating")
+        birthday = get_text(player, "birthday")
 
         data = (
             fideid,
@@ -78,7 +85,7 @@ def import_list(filename):
         os.remove("players_list_xml.xml")
 
 
-def main():
+def main() -> None:
     extract_list("https://ratings.fide.com/download/players_list_xml_legacy.zip")
     import_list("players_list_xml.xml")
 

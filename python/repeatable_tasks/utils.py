@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 
-def clean_pgn(pgn_path: Path):
+def clean_pgn(pgn_path: Path) -> None:
     with open(pgn_path, encoding="utf-8", errors="ignore") as f:
         text = f.read()
 
@@ -26,7 +26,7 @@ def clean_pgn(pgn_path: Path):
     os.replace(tmp_path, pgn_path)
 
 
-def concat_pgns(pgn_path: Path):
+def concat_pgns(pgn_path: Path) -> None:
     concat_path = pgn_path / "concat.pgn"
 
     if concat_path.exists():

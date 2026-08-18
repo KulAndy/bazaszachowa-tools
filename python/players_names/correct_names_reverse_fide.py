@@ -1,10 +1,11 @@
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import cast
 
 import mysql.connector
 from unidecode import unidecode
 
-from settings import SETTINGS
+from ..settings import SETTINGS
 
 THREADS = 6
 BATCH_SIZE = 500
@@ -12,7 +13,7 @@ BATCH_SIZE = 500
 punctuation_pattern = re.compile(r"[^\w]+", re.UNICODE)
 
 
-def process_fullname(fullname):
+def process_fullname(fullname: str) -> None:
     conn = None
     cur = None
     try:
@@ -34,7 +35,7 @@ def process_fullname(fullname):
         """,
             (canonical_first + "%", canonical_regex),
         )
-        if rows := cur.fetchall():
+        if rows := cast(list[tuple[str]], cur.fetchall()):
             if len(rows) == 1:
                 row = rows[0]
                 fide_name = row[0]
@@ -70,7 +71,7 @@ def process_fullname(fullname):
                 SELECT distinct name FROM fide_players 
                 WHERE name LIKE %s AND name REGEXP %s 
                 """
-        params = ()
+        params: tuple[str, ...] = ()
         if fulltext_name:
             sql += " AND MATCH(name) AGAINST(%s IN BOOLEAN MODE) "
             params += (fulltext_name,)
@@ -84,7 +85,7 @@ def process_fullname(fullname):
             )
 
             cur.execute(sql, (first_part + "%", regex_pattern) + params)
-            rows = cur.fetchall()
+            rows = cast(list[tuple[str]], cur.fetchall())
             if len(rows) == 1:
                 row = rows[0]
                 print(f"|{fullname}| > |{row[0]}|")
@@ -104,7 +105,7 @@ def process_fullname(fullname):
             conn.close()
 
 
-def fetch_fullnames():
+def fetch_fullnames() -> list[str]:
     conn = mysql.connector.connect(**SETTINGS["mysql"])
     cursor = conn.cursor()
     cursor.execute("""
@@ -114,7 +115,9 @@ def fetch_fullnames():
         LEFT JOIN fide_players ON all_players.fullname = fide_players.name
         WHERE subtitutions.id IS NULL AND fide_players.fideid IS NULL    
         """)
-    all_names = [row[0] for row in cursor.fetchall()]
+    all_names = [
+        row[0] for row in cast(list[tuple[str]], cursor.fetchall()) if len(row) > 0
+    ]
     cursor.close()
     conn.close()
     return all_names

@@ -1,9 +1,10 @@
 import time
+from typing import cast
 
 import mysql.connector
 import requests
 
-from settings import SETTINGS
+from .settings import SETTINGS
 
 mydb = mysql.connector.connect(**SETTINGS["mysql"])
 
@@ -22,7 +23,7 @@ def url_exists(url: str, timeout: int = 5) -> bool:
         return False
 
 
-def main():
+def main() -> None:
     curs = mydb.cursor()
     curs.execute(r"""SELECT site 
     FROM `sites` 
@@ -31,7 +32,7 @@ def main():
     and not site regexp "https://lichess.org/broadcast/[\\w-]+/\\w{8}"
     ORDER BY site""")
 
-    rows = curs.fetchall()
+    rows = cast(list[tuple[str]], curs.fetchall())
     with open("out.txt", "w") as f:
         for row in rows:
             site = row[0]

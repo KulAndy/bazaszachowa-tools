@@ -3,19 +3,21 @@ import sys
 import threading
 import traceback
 from collections.abc import Generator
+from typing import cast
 
 from mysql.connector import pooling
 
-from settings import SETTINGS
+from .settings import SETTINGS
 
 POOL_SIZE = 8
-db_pool = None
-unique_years = set()
+db_pool: pooling.MySQLConnectionPool | None = None
+unique_years: set[int] = set()
 
 
 def init_db_pool() -> None:
     global db_pool
     db_pool = pooling.MySQLConnectionPool(
+        autocommit=True,
         pool_name="my_pool",
         pool_size=POOL_SIZE,
         pool_reset_session=True,
@@ -23,9 +25,18 @@ def init_db_pool() -> None:
     )
 
 
-def fetch_duplicate_games(table: str) -> Generator[tuple]:
+def get_db_pool() -> pooling.MySQLConnectionPool:
     global db_pool
-    connection = db_pool.get_connection()
+
+    if db_pool is None:
+        init_db_pool()
+
+    assert db_pool is not None
+    return db_pool
+
+
+def fetch_duplicate_games(table: str) -> Generator[tuple[str]]:
+    connection = get_db_pool().get_connection()
     cursor = connection.cursor(buffered=True)
     try:
         sql = f"""
@@ -49,22 +60,25 @@ def fetch_duplicate_games(table: str) -> Generator[tuple]:
         connection.close()
 
 
-def fetch_game_details(table: str, ids: list[str]) -> list[tuple]:
-    global db_pool
+def fetch_game_details(
+    table: str, ids: list[str]
+) -> list[tuple[int, str, int, int | None, int | None]]:
     connection = None
     cursor = None
     try:
-        connection = db_pool.get_connection()
+        connection = get_db_pool().get_connection()
         cursor = connection.cursor(buffered=True)
-        ids = re.sub(r"[\[\]]", "", ",".join(ids))
+        ids_list = re.sub(r"[\[\]]", "", ",".join(ids))
         sql = f"""
             SELECT id, moves_blob, Year, Month, Day
             FROM {table}_games
-            WHERE id IN ({ids})
+            WHERE id IN ({ids_list})
             ORDER BY moves_blob
         """
         cursor.execute(sql)
-        return cursor.fetchall()
+        return cast(
+            list[tuple[int, str, int, int | None, int | None]], cursor.fetchall()
+        )
     except Exception as e:
         print(f"Error fetching game details: {str(e)}")
         traceback.print_exc()
@@ -89,8 +103,7 @@ def process_duplicates(table: str, lock: threading.Lock, duplicates: list[int]) 
                 connection = None
                 cursor = None
                 try:
-                    connection = db_pool.get_connection()
-                    connection.autocommit = True
+                    connection = get_db_pool().get_connection()
                     cursor = connection.cursor()
 
                     delete_game_sql = f"DELETE FROM {table}_games WHERE id = %s"
@@ -177,8 +190,6 @@ def process_duplicates(table: str, lock: threading.Lock, duplicates: list[int]) 
 
 
 def main() -> int:
-    global db_pool
-    init_db_pool()
     try:
         TABLE = sys.argv[1] if len(sys.argv) > 1 else "all"
     except Exception as e:

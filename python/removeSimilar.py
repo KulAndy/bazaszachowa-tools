@@ -4,20 +4,22 @@ import sys
 import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import cast
 
 from mysql.connector import pooling
 
 from .settings import SETTINGS
 
 POOL_SIZE = 8
-db_pool = None
+db_pool: pooling.MySQLConnectionPool | None = None
 
-unique_years = set()
+unique_years: set[int] = set()
 
 
 def init_db_pool() -> None:
     global db_pool
     db_pool = pooling.MySQLConnectionPool(
+        autocommit=True,
         pool_name="my_pool",
         pool_size=POOL_SIZE,
         pool_reset_session=True,
@@ -25,8 +27,18 @@ def init_db_pool() -> None:
     )
 
 
-def fetch_duplicate_games(year: int, table: str) -> list[tuple]:
-    connection = db_pool.get_connection()
+def get_db_pool() -> pooling.MySQLConnectionPool:
+    global db_pool
+
+    if db_pool is None:
+        init_db_pool()
+
+    assert db_pool is not None
+    return db_pool
+
+
+def fetch_duplicate_games(year: int, table: str) -> list[tuple[str]]:
+    connection = get_db_pool().get_connection()
     cursor = connection.cursor(buffered=True)
     try:
         sql = f"""
@@ -39,18 +51,19 @@ def fetch_duplicate_games(year: int, table: str) -> list[tuple]:
         HAVING COUNT(*) > 1;
         """
         cursor.execute(sql, (year,))
-        return cursor.fetchall()
+        return cast(list[tuple[str]], cursor.fetchall())
     finally:
         cursor.close()
         connection.close()
 
 
-def fetch_game_details(table: str, ids: list[str]) -> list[tuple]:
-    global db_pool
-    connection = db_pool.get_connection()
+def fetch_game_details(
+    table: str, ids: list[str]
+) -> list[tuple[int, str, int, str, int, str]]:
+    connection = get_db_pool().get_connection()
     cursor = connection.cursor(buffered=True)
     try:
-        ids = re.sub(r"[\[\]]", "", ",".join(ids))
+        ids_list = re.sub(r"[\[\]]", "", ",".join(ids))
         sql = rf"""
         SELECT {table}_games.id, moves_blob,
         a1.id as whiteID, REGEXP_REPLACE(a1.fullname, "[\\s,.]+", " ") as white,
@@ -58,17 +71,19 @@ def fetch_game_details(table: str, ids: list[str]) -> list[tuple]:
         FROM {table}_games
         INNER JOIN {table}_players AS a1 ON {table}_games.WhiteID = a1.id
         INNER JOIN {table}_players AS a2 ON {table}_games.BlackID = a2.id
-        WHERE {table}_games.id IN ({ids})
+        WHERE {table}_games.id IN ({ids_list})
         ORDER BY moves_blob
 """
         cursor.execute(sql)
-        return cursor.fetchall()
+        return cast(list[tuple[int, str, int, str, int, str]], cursor.fetchall())
     finally:
         cursor.close()
         connection.close()
 
 
-def process_year(year, table, lock, duplicates):
+def process_year(
+    year: int, table: str, lock: threading.Lock, duplicates: list[int]
+) -> None:
     logging.info(year)
     if year in unique_years:
         return
@@ -78,8 +93,7 @@ def process_year(year, table, lock, duplicates):
         if rows:
             game_ids = [id for row in rows for id in row]
             games = fetch_game_details(table, game_ids)
-            connection = db_pool.get_connection()
-            connection.autocommit = True
+            connection = get_db_pool().get_connection()
             cursor = connection.cursor()
             try:
                 update_white_sql = (
@@ -180,11 +194,9 @@ def process_year(year, table, lock, duplicates):
         logging.exception(f"Error processing year {year}: {str(e)}")
 
 
-def main(table) -> int | None:
-    global db_pool
-    init_db_pool()
+def main(table: str) -> int:
     try:
-        connection = db_pool.get_connection()
+        connection = get_db_pool().get_connection()
         cursor = connection.cursor()
         cursor.execute(f"SELECT DISTINCT Year FROM `{table}_games`")
         years = [item for sublist in cursor.fetchall() for item in sublist]
@@ -212,6 +224,8 @@ def main(table) -> int | None:
     except Exception as e:
         logging.exception(traceback.format_exc())
         logging.exception(f"Error in main process: {str(e)}")
+
+    return 0
 
 
 if __name__ == "__main__":

@@ -27,7 +27,7 @@ def get_latest_broadcast_url() -> str:
     return f"https://database.lichess.org/broadcast/{filename}"
 
 
-def download_file(url) -> str:
+def download_file(url: str) -> str:
     filename = os.path.basename(urlparse(url).path)
     dest_path = os.path.join(DOWNLOAD_DIR, filename)
 

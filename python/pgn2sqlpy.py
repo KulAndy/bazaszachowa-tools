@@ -23,11 +23,13 @@ def parse_date(date_str: str) -> tuple[int | None, int | None, int | None]:
     return None, None, None
 
 
-def pack_move(src: chess.Square, dest: chess.Square, piece: chess.PieceType | None):
-    return (src << 10) | (dest << 4) | (piece & 0x07)
+def pack_move(
+    src: chess.Square, dest: chess.Square, piece: chess.PieceType | None
+) -> int:
+    return (src << 10) | (dest << 4) | ((piece or 0) & 0x07)
 
 
-def main():
+def main() -> None:
     if len(sys.argv) >= 3:
         _, input_file, table_name = sys.argv[0:3]
     elif len(sys.argv) == 2:
@@ -78,10 +80,11 @@ def main():
                 try:
                     for key in pgn_keys:
                         if key in game.headers:
-                            value = game.headers[key]
+                            value: str | int | None = game.headers[key]
                             if key in ("WhiteElo", "BlackElo"):
                                 try:
-                                    game_data[key] = int(value)
+                                    if value:
+                                        game_data[key] = int(value)
                                 except ValueError:
                                     game_data[key] = None
                             elif key in (
@@ -93,7 +96,7 @@ def main():
                                 "Result",
                             ):
                                 game_data[key] = value if value else "?"
-                            elif key == "Date":
+                            elif key == "Date" and isinstance(value, str):
                                 year, month, day = parse_date(value)
                                 if year:
                                     game_data["Year"] = year

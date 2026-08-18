@@ -1,11 +1,14 @@
 import csv
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import cast
 
 import mysql.connector
+from mysql.connector.abstracts import MySQLConnectionAbstract, MySQLCursorAbstract
+from mysql.connector.pooling import PooledMySQLConnection
 from unidecode import unidecode
 
-from settings import SETTINGS
+from ..settings import SETTINGS
 
 THREADS = 6
 CSV_PATH = "./rejestr_czlonkow.csv"
@@ -15,7 +18,9 @@ CSV_DELIMITER = ","
 thread_local = threading.local()
 
 
-def get_connection():
+def get_connection() -> tuple[
+    PooledMySQLConnection | MySQLConnectionAbstract, MySQLCursorAbstract
+]:
     if not hasattr(thread_local, "conn"):
         thread_local.conn = mysql.connector.connect(**SETTINGS["mysql"])
         thread_local.cur = thread_local.conn.cursor()
@@ -40,7 +45,7 @@ def normalize_csv_name(raw_name: str) -> str:
     return unidecode(f"{lastname}, {firstname}")
 
 
-def load_member_registry():
+def load_member_registry() -> dict[str, str]:
     registry = {}
 
     with open(CSV_PATH, encoding=CSV_ENCODING, newline="") as f:
@@ -57,7 +62,7 @@ def load_member_registry():
     return registry
 
 
-def fetch_fullnames():
+def fetch_fullnames() -> list[str]:
     conn = mysql.connector.connect(**SETTINGS["mysql"])
     cursor = conn.cursor()
     cursor.execute("""
@@ -67,17 +72,19 @@ def fetch_fullnames():
         LEFT JOIN fide_players on all_players.fullname = fide_players.name
         WHERE subtitutions.id IS NULL AND fide_players.fideid IS null
     """)
-    names = [row[0] for row in cursor.fetchall()]
+    names = [
+        row[0] for row in cast(list[tuple[str]], cursor.fetchall()) if len(row) > 0
+    ]
     cursor.close()
     conn.close()
     return names
 
 
-def find_matching_name(name: str, registry: dict) -> str | None:
+def find_matching_name(name: str, registry: dict[str, str]) -> str | None:
     return registry.get(normalize_key(name))
 
 
-def process_fullname(fullname: str, registry: dict):
+def process_fullname(fullname: str, registry: dict[str, str]) -> None:
     try:
         conn, cur = get_connection()
         parts = fullname.replace(",", " ").split()
@@ -99,7 +106,7 @@ def process_fullname(fullname: str, registry: dict):
         print(f"[ERROR] {fullname}: {e}")
 
 
-def close_thread_connection():
+def close_thread_connection() -> None:
     if hasattr(thread_local, "cur"):
         thread_local.cur.close()
 

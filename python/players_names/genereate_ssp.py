@@ -1,9 +1,11 @@
 import json
+from typing import cast
 
 import mysql.connector
 
-from settings import SETTINGS
+from ..settings import SETTINGS
 
+PlayerRow = tuple[str, int, str]
 mydb = mysql.connector.connect(**SETTINGS["mysql"])
 
 curs = mydb.cursor()
@@ -18,7 +20,7 @@ curs.execute(sql)
 with open("my_spell.ssp", "w") as file:
     file.write('@PLAYER "., -_*"\n')
     while row := curs.fetchone():
-        fullname, fide_id, substitutions_string = row
+        fullname, fide_id, substitutions_string = cast(PlayerRow, row)
         substitutions = json.loads(substitutions_string)
         file.write(f"{fullname}\n")
         if fide_id:

@@ -6,7 +6,9 @@ import shutil
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
+from collections.abc import Mapping
 from datetime import datetime
+from typing import Any, cast
 from urllib.parse import quote_plus
 
 import mysql.connector
@@ -38,7 +40,7 @@ MONGO_URI = (
 )
 MONGO_COLLECTION = "poland_tournaments"
 
-client = MongoClient(MONGO_URI)
+client: MongoClient[Mapping[str, Any]] = MongoClient(MONGO_URI)
 db = client[settings.SETTINGS["mongo"]["database"]]
 coll = db[MONGO_COLLECTION]
 
@@ -114,15 +116,19 @@ def get_page_url(tournamentid: str | int) -> str | None:
         if not link_tag:
             continue
 
-        return link_tag.get("href", "").strip()
+        href = link_tag.get("href")
+        if isinstance(href, str):
+            return href.strip()
 
     return None
 
 
 def process_tournament(args: tuple[str, str | None]) -> None:
     file, url = args
-    mydb = mysql.connector.connect(**settings.SETTINGS["mysql"])
-    mydb.autocommit = True
+    mydb = mysql.connector.connect(
+        **settings.SETTINGS["mysql"],
+        autocommit=True,
+    )
     curs = mydb.cursor()
     tournamentid = os.path.splitext(os.path.basename(file))[0]
     if int(tournamentid) in IMPORTED_TOURNAMENTS:
@@ -211,7 +217,7 @@ def process_tournament(args: tuple[str, str | None]) -> None:
         upsert=True,
     )
 
-    names = []
+    names: list[tuple[str]] = []
     for cobarray_item2 in root.findall(".//list_of_players/cobarray_item"):
         rounds = cobarray_item2.findall(".//rounds/cobarray_item")
         if not rounds:
@@ -253,36 +259,31 @@ def process_tournament(args: tuple[str, str | None]) -> None:
             names,
         )
 
-        for name in names:
+        for (name,) in names:
             curs.execute(
                 """
                 SELECT id FROM `players`
                 WHERE fullname like %s
             """,
-                name,
+                (name,),
             )
-            playerid = curs.fetchone()
+            playerid_row = cast(tuple[int], curs.fetchone())
 
             db.poland_tournaments.update_one(
                 {"_id": int(tournamentid)},
-                {"$addToSet": {"players": playerid[0]}},
+                {"$addToSet": {"players": playerid_row[0]}},
             )
 
     os.remove(file)
 
 
 def import_swsx_s() -> None:
-    while True:
-        dirs = ["swsx", "swdx", "sws", "swd"]
-        swsx_files = []
-        for directory in dirs:
-            files = list_files_in_directory(directory)
-            for file in files:
-                if file.endswith("swsx") or file.endswith("swdx"):
-                    process_tournament((file, None))
-
-        if len(swsx_files) == 0:
-            break
+    dirs = ["swsx", "swdx", "sws", "swd"]
+    for directory in dirs:
+        files = list_files_in_directory(directory)
+        for file in files:
+            if file.endswith("swsx") or file.endswith("swdx"):
+                process_tournament((file, None))
 
     if os.path.exists(TMP_ROOT):
         shutil.rmtree(TMP_ROOT)
@@ -354,7 +355,11 @@ def scrap_tournaments(year: int) -> list[list[str]] | None:
         for col in cols:
             link = col.find("a")
             if link:
-                row_values.append(link.get("href", "").strip())
+                href = link.get("href")
+                if isinstance(href, str):
+                    row_values.append(href.strip())
+                else:
+                    row_values.append(col.get_text(strip=True))
             else:
                 row_values.append(col.get_text(strip=True))
 
@@ -363,6 +368,8 @@ def scrap_tournaments(year: int) -> list[list[str]] | None:
 
 
 def extract_scrapped_data(rows: list[list[str]] | None) -> None:
+    if rows is None:
+        return
     for row in rows:
         _, tournamentid, _, _, _, _, _, url = row
         if int(tournamentid) in IMPORTED_TOURNAMENTS:

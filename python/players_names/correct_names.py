@@ -1,15 +1,17 @@
 import re
 import sys
 import traceback
+from typing import cast
 
 import mysql.connector
 
-from settings import SETTINGS
+from ..settings import SETTINGS
 
+PlayerRow = tuple[int, str]
 mydb = mysql.connector.connect(**SETTINGS["mysql"])
 
 
-def get_update_sql(table, old, new):
+def get_update_sql(table: str, old: int, new: int) -> str:
     return f"""UPDATE {table}_games SET whiteId = {new} WHERE whiteID = {old};
 UPDATE {table}_games SET blackID = {new} WHERE blackID = {old};
 DELETE FROM {table}_players WHERE id = {old};
@@ -63,7 +65,7 @@ if __name__ == "__main__":
     """
 
     curs.execute(sql)
-    rows = curs.fetchall()
+    rows = cast(list[PlayerRow], curs.fetchall())
     with open(f"correct_{TABLE}.sql", "w") as output:
         for i in range(len(rows) - 1):
             try:

@@ -6,7 +6,7 @@ import requests
 import unidecode
 from bs4 import BeautifulSoup
 
-from settings import SETTINGS
+from ...settings import SETTINGS
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s"
@@ -14,8 +14,7 @@ logging.basicConfig(
 
 log = logging.getLogger("wiki-scraper")
 
-mydb = mysql.connector.connect(**SETTINGS["mysql"])
-mydb.autocommit = True
+mydb = mysql.connector.connect(**SETTINGS["mysql"], autocommit=True)
 curs = mydb.cursor()
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; wiki-scraper/1.0)"}
@@ -26,10 +25,10 @@ IGNORE_LINKS = [
 ]
 BS4_PARSER = "html.parser"
 
-visited = set()
+visited: set[str] = set()
 
 
-def fetch(url):
+def fetch(url: str) -> requests.Response | None:
     try:
         log.debug(f"GET {url}")
         r = requests.get(url, headers=HEADERS, timeout=15)
@@ -50,7 +49,7 @@ def fetch(url):
 # ----------------------------
 # SCRAPER
 # ----------------------------
-def scrap_wiki(url, base_url, depth=0):
+def scrap_wiki(url: str, base_url: str, depth: int = 0) -> list[tuple[str, str]]:
     indent = "  " * depth
 
     if url in visited:
@@ -66,13 +65,17 @@ def scrap_wiki(url, base_url, depth=0):
 
     soup = BeautifulSoup(response.text, BS4_PARSER)
 
-    substitutions = []
+    substitutions: list[tuple[str, str]] = []
 
-    links = [
-        a["href"]
-        for a in soup.find_all("a", href=True)
-        if not a.find_parent("div", class_="catlinks")
-    ]
+    links: list[str] = []
+
+    for a in soup.find_all("a", href=True):
+        if a.find_parent("div", class_="catlinks"):
+            continue
+
+        href = a.get("href")
+        if isinstance(href, str):
+            links.append(href)
 
     log.info(f"{indent}FOUND LINKS: {len(links)}")
 
@@ -121,7 +124,8 @@ def scrap_wiki(url, base_url, depth=0):
             continue
 
         english_url = english_link_tag.get("href")
-        if not english_url:
+
+        if not isinstance(english_url, str):
             log.warning(f"{indent}EN LINK WITHOUT HREF: {polish_title}")
             continue
 
@@ -175,7 +179,7 @@ def scrap_wiki(url, base_url, depth=0):
 # ----------------------------
 # MAIN
 # ----------------------------
-def main():
+def main() -> None:
     log.info("START SCRAPING")
 
     substitutions = []

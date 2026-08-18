@@ -2,14 +2,13 @@ import re
 
 import mysql.connector
 
-from settings import SETTINGS
+from ...settings import SETTINGS
 
-mydb = mysql.connector.connect(**SETTINGS["mysql"])
-mydb.autocommit = True
+mydb = mysql.connector.connect(**SETTINGS["mysql"], autocommit=True)
 curs = mydb.cursor()
 
 
-def process_substitutions(player, substitutions):
+def process_substitutions(player: str, substitutions: list[str]) -> None:
     if player and substitutions:
         print(player)
         params = [(player, x) for x in substitutions]
@@ -20,7 +19,7 @@ def process_substitutions(player, substitutions):
         )
 
 
-def main():
+def main() -> None:
     with open("ratings0425.ssp") as file:
         player_data = False
         player = ""

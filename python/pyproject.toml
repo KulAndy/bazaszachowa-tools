@@ -46,3 +46,8 @@ warn_unused_configs = true
 warn_unused_ignores = true
 
 ignore_missing_imports = true
+
+exclude = [
+    "^python/chess_scrappers/",
+]
+

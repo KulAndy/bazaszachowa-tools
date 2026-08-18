@@ -26,6 +26,7 @@ jobs:
       - name: Install dependencies
         run: |
           apk add --no-cache \
+            git \
             build-base \
             cmake \
             mariadb-connector-c-dev \

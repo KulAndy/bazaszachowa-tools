@@ -28,4 +28,4 @@ jobs:
             pkg update
             pkg install -y cmake gcc mysql80-client
             cmake -S cpp -B cpp/build
-            cmake --build cpp/build --parallel
+            cmake --build cpp/build --parallel 2

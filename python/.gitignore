@@ -5,3 +5,4 @@ players_names/correct_poland.sql
 .idea/
 .venv/
 __pycache__/
+/bazaszachowa_tools.egg-info/

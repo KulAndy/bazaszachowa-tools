@@ -50,15 +50,17 @@ void processBatch(MYSQL *conn, const string &table,
       continue;
     }
 
-    int game_id = atoi(row[0]);
     const char *moves_cstr = row[1] ? row[1] : "";
     string moves_blob(moves_cstr);
 
-    for (const auto &eco : eco_lines) {
-      if (moves_blob.rfind(eco.uci, 0) == 0) {
-        updates.emplace_back(eco.id, game_id);
-        break;
-      }
+    auto it =
+        std::find_if(eco_lines.begin(), eco_lines.end(), [&](const auto &eco) {
+          return moves_blob.rfind(eco.uci, 0) == 0;
+        });
+
+    if (it != eco_lines.end()) {
+      int game_id = atoi(row[0]);
+      updates.emplace_back(it->id, game_id);
     }
   }
 
@@ -108,7 +110,7 @@ void classify_worker(const string &table, const vector<EcoLine> &eco_lines,
   mysql_close(conn);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, const char *argv[]) {
   string table = "all_games";
   if (argc > 1)
     table = argv[1];

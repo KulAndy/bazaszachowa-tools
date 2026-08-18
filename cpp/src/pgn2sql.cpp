@@ -76,7 +76,6 @@ public:
   void move(string_view move, string_view comment) {
     try {
       const Move m = uci::parseSan(board, move);
-      const string moveUci = uci::moveToUci(m);
 
       int src = m.from().index();
       int dest = m.to().index();
@@ -179,7 +178,7 @@ private:
   }
 };
 
-int main(int argc, char **argv) {
+int main(int argc, const char *argv[]) {
   string input_file;
   string target_table;
 

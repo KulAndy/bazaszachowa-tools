@@ -172,20 +172,20 @@ void processYear(const string &table, const string &year) {
   array<MYSQL_BIND, 3> param{};
   string year_str = year;
   param[0].buffer_type = MYSQL_TYPE_STRING;
-  param[0].buffer = (void *)year_str.c_str();
+  param[0].buffer = const_cast<char *>(year_str.c_str());
   param[0].buffer_length = year_str.size();
   param[0].is_null = nullptr;
   param[0].length = &param[0].buffer_length;
 
   int batchSize = 1000;
   param[1].buffer_type = MYSQL_TYPE_LONG;
-  param[1].buffer = (void *)&batchSize;
+  param[1].buffer = static_cast<void *>(&batchSize);
   param[1].is_null = nullptr;
   param[1].length = nullptr;
 
   int offset = 0;
   param[2].buffer_type = MYSQL_TYPE_LONG;
-  param[2].buffer = (void *)&offset;
+  param[2].buffer = static_cast<void *>(&offset);
   param[2].is_null = nullptr;
   param[2].length = nullptr;
 
@@ -199,8 +199,6 @@ void processYear(const string &table, const string &year) {
   bool moreRows = true;
   while (moreRows) {
     moreRows = false;
-
-    param[2].buffer = (void *)&offset;
 
     if (mysql_stmt_execute(stmt)) {
       cerr << "mysql_stmt_execute failed: " << mysql_stmt_error(stmt) << "\n";
@@ -304,7 +302,7 @@ void processYear(const string &table, const string &year) {
   mysql_close(conn);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, const char *argv[]) {
   string table = "all_games";
   if (argc > 1) {
     table = argv[1];

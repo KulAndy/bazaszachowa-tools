@@ -1,5 +1,6 @@
 #!/usr/local/bin/python3
 
+import contextlib
 import os
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -20,27 +21,24 @@ def import_list(filename):
     tree = ET.parse(filename)
     root = tree.getroot()
 
-    cnx = mysql.connector.connect(
-        **SETTINGS['mysql']
-    )
+    cnx = mysql.connector.connect(**SETTINGS["mysql"])
     cursor = cnx.cursor()
 
     cnx.start_transaction()
     cursor.execute("""TRUNCATE TABLE `fide_players` """)
 
     query = (
-            "INSERT INTO fide_players "
-            "(fideid, name, country, sex, title, w_title, o_title, "
-            "rating, rapid_rating, "
-            "blitz_rating, birthday) "
-            "VALUES (" + ",".join(["%s"] * 11) +
-            ") "
-            "ON DUPLICATE KEY UPDATE "
-            "title = VALUES(title), w_title = VALUES(w_title), o_title = VALUES(o_title), "
-            "rating = VALUES(rating), "
-            "rapid_rating = VALUES(rapid_rating), "
-            "blitz_rating = VALUES(blitz_rating), "
-            "birthday = VALUES(birthday)"
+        "INSERT INTO fide_players "
+        "(fideid, name, country, sex, title, w_title, o_title, "
+        "rating, rapid_rating, "
+        "blitz_rating, birthday) "
+        "VALUES (" + ",".join(["%s"] * 11) + ") "
+        "ON DUPLICATE KEY UPDATE "
+        "title = VALUES(title), w_title = VALUES(w_title), o_title = VALUES(o_title), "
+        "rating = VALUES(rating), "
+        "rapid_rating = VALUES(rapid_rating), "
+        "blitz_rating = VALUES(blitz_rating), "
+        "birthday = VALUES(birthday)"
     )
 
     for player in root.findall("player"):
@@ -76,10 +74,8 @@ def import_list(filename):
     cursor.close()
     cnx.close()
 
-    try:
+    with contextlib.suppress(OSError):
         os.remove("players_list_xml.xml")
-    except OSError:
-        pass
 
 
 def main():

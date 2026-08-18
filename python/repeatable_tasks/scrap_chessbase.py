@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -16,16 +16,14 @@ def scrap_chessbase() -> None:
     response = requests.get(url)
 
     if response.status_code == 200:
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = BeautifulSoup(response.text, "html.parser")
 
         links = [
-            a['href']
-            for a in soup.find_all('a', href=True)
-            if "Games?" in a['href']
+            a["href"] for a in soup.find_all("a", href=True) if "Games?" in a["href"]
         ]
 
         pgn_file = Path(PGN_DIR) / "chessbase.pgn"
-        with open(pgn_file, 'w') as output:
+        with open(pgn_file, "w") as output:
             for link in links:
                 tournament_link = f"https://live.chessbase.com{link}"
                 parsed_url = urlparse(tournament_link)
@@ -39,5 +37,5 @@ def scrap_chessbase() -> None:
         print(f"Failed to fetch the page. Status code: {response.status_code}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     scrap_chessbase()

@@ -6,26 +6,16 @@ from unidecode import unidecode
 
 from .settings import SETTINGS
 
-mydb = mysql.connector.connect(
-    **SETTINGS["mysql"]
-)
+mydb = mysql.connector.connect(**SETTINGS["mysql"])
 curs = mydb.cursor()
 
 
 def clean_text(text: str) -> str:
     text = unicodedata.normalize("NFKD", text)
-    text = re.sub(
-        r'[\x00-\x1F\x7F-\x9F]',
-        '',
-        text
-    )
+    text = re.sub(r"[\x00-\x1F\x7F-\x9F]", "", text)
 
     text = unidecode(text)
-    text = re.sub(
-        r'[\u200B-\u200D\uFEFF\u00A0]',
-        '',
-        text
-    )
+    text = re.sub(r"[\u200B-\u200D\uFEFF\u00A0]", "", text)
 
     return text.strip()
 
@@ -40,30 +30,42 @@ def decode_events() -> None:
     to_replace = []
 
     for row in rows:
-        event, = row
+        (event,) = row
         decoded_event = clean_text(event)
         decoded.append((decoded_event,))
         to_replace.append((decoded_event, event))
 
-    curs.executemany("""INSERT IGNORE chess_events(name)
+    curs.executemany(
+        """INSERT IGNORE chess_events(name)
     VALUES (%s)
-    """, decoded)
-    curs.executemany("""UPDATE IGNORE chess_events
+    """,
+        decoded,
+    )
+    curs.executemany(
+        """UPDATE IGNORE chess_events
     SET name = %s
     WHERE  name = %s
-    """, to_replace)
+    """,
+        to_replace,
+    )
 
-    curs.executemany("""
+    curs.executemany(
+        """
     UPDATE all_games
     SET eventID = ( SELECT id FROM chess_events WHERE name = %s )
     WHERE eventID IN ( SELECT id FROM chess_events WHERE name = %s )
-    """, to_replace)
+    """,
+        to_replace,
+    )
 
-    curs.executemany("""
+    curs.executemany(
+        """
     UPDATE poland_games
     SET eventID = ( SELECT id FROM chess_events WHERE name = %s )
     WHERE eventID IN ( SELECT id FROM chess_events WHERE name = %s )
-    """, to_replace)
+    """,
+        to_replace,
+    )
 
     mydb.commit()
 
@@ -78,30 +80,42 @@ def decode_sites() -> None:
     to_replace = []
 
     for row in rows:
-        site, = row
+        (site,) = row
         decoded_site = clean_text(site)
         decoded.append((decoded_site,))
         to_replace.append((decoded_site, site))
 
-    curs.executemany("""INSERT IGNORE sites(site)
+    curs.executemany(
+        """INSERT IGNORE sites(site)
     VALUES (%s)
-    """, decoded)
-    curs.executemany("""UPDATE IGNORE sites
+    """,
+        decoded,
+    )
+    curs.executemany(
+        """UPDATE IGNORE sites
     SET site = %s
     WHERE  site = %s
-    """, to_replace)
+    """,
+        to_replace,
+    )
 
-    curs.executemany("""
+    curs.executemany(
+        """
     UPDATE all_games
     SET siteID = ( SELECT id FROM sites WHERE site = %s )
     WHERE siteID IN ( SELECT id FROM sites WHERE site = %s )
-    """, to_replace)
+    """,
+        to_replace,
+    )
 
-    curs.executemany("""
+    curs.executemany(
+        """
     UPDATE poland_games
     SET siteID = ( SELECT id FROM sites WHERE site = %s )
     WHERE siteID IN ( SELECT id FROM sites WHERE site = %s )
-    """, to_replace)
+    """,
+        to_replace,
+    )
 
     mydb.commit()
 
@@ -116,43 +130,64 @@ def decode_players() -> None:
     to_replace = []
 
     for row in rows:
-        player, = row
+        (player,) = row
         decoded_player = clean_text(player)
         decoded.append((decoded_player,))
         to_replace.append((decoded_player, player))
 
-    curs.executemany("""INSERT IGNORE players(fullname)
+    curs.executemany(
+        """INSERT IGNORE players(fullname)
     VALUES (%s)
-    """, decoded)
-    curs.executemany("""UPDATE IGNORE players
+    """,
+        decoded,
+    )
+    curs.executemany(
+        """UPDATE IGNORE players
     SET fullname = %s
     WHERE  fullname = %s
-    """, to_replace)
+    """,
+        to_replace,
+    )
 
-    curs.executemany("""INSERT IGNORE INTO `subtitutions`(`fullname`, `substitute`) 
-    VALUES (%s, %s)""", to_replace)
+    curs.executemany(
+        """INSERT IGNORE INTO `subtitutions`(`fullname`, `substitute`) 
+    VALUES (%s, %s)""",
+        to_replace,
+    )
 
-    curs.executemany("""
+    curs.executemany(
+        """
     UPDATE all_games
     SET whiteID = ( SELECT id FROM players WHERE fullname = %s )
     WHERE whiteID IN ( SELECT id FROM players WHERE fullname = %s )
-    """, to_replace)
-    curs.executemany("""
+    """,
+        to_replace,
+    )
+    curs.executemany(
+        """
     UPDATE all_games
     SET blackID = ( SELECT id FROM players WHERE fullname = %s )
     WHERE blackID IN ( SELECT id FROM players WHERE fullname = %s )
-    """, to_replace)
+    """,
+        to_replace,
+    )
 
-    curs.executemany("""
+    curs.executemany(
+        """
     UPDATE poland_games
     SET whiteID = ( SELECT id FROM players WHERE fullname = %s )
     WHERE whiteID IN ( SELECT id FROM players WHERE fullname = %s )
-    """, to_replace)
-    curs.executemany("""
+    """,
+        to_replace,
+    )
+    curs.executemany(
+        """
     UPDATE poland_games
     SET blackID = ( SELECT id FROM players WHERE fullname = %s )
     WHERE blackID IN ( SELECT id FROM players WHERE fullname = %s )
-    """, to_replace)
+    """,
+        to_replace,
+    )
 
     mydb.commit()
 

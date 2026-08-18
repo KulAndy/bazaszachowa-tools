@@ -1,11 +1,11 @@
 import json
 import logging
 import re
+import time
 from datetime import date, datetime
 from urllib.parse import quote_plus
 
 import requests
-import time
 from bs4 import BeautifulSoup
 from dateutil.relativedelta import relativedelta
 from pymongo import MongoClient
@@ -19,7 +19,7 @@ MONGO_URI = (
 )
 MONGO_COLLECTION = "fide_tournaments"
 client = MongoClient(MONGO_URI)
-db = client[settings.SETTINGS['mongo']['database']]
+db = client[settings.SETTINGS["mongo"]["database"]]
 coll = db[MONGO_COLLECTION]
 
 today = date.today().replace(day=1)
@@ -28,18 +28,21 @@ two_months_ago = today - relativedelta(months=2)
 EVENT_RE = re.compile(r"/report\.phtml\?event=(\d+)")
 
 session = requests.Session()
-session.headers.update({
-    "User-Agent": (
-        "Mozilla/5.0 (X11; Linux x86_64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/151.0.0.0 Safari/537.36"
-    ),
-    "Accept": "*/*",
-    "Accept-Language": "pl-PL,pl;q=0.5",
-    "X-Requested-With": "XMLHttpRequest",
-})
+session.headers.update(
+    {
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/151.0.0.0 Safari/537.36"
+        ),
+        "Accept": "*/*",
+        "Accept-Language": "pl-PL,pl;q=0.5",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+)
 
 BS4_PARSER = "html.parser"
+
 
 def get_tournaments_in_base(country: str) -> list[int]:
     docs = coll.find({"country": country}, {"_id": 1})
@@ -70,11 +73,7 @@ def get_periods(country: str) -> list[str]:
     url = f"https://ratings.fide.com/a_tournaments_panel.php?country={country}&periods_tab=1"
     res = session.get(url)
     data = res.json() or []
-    periods = [
-        x["frl_publish"]
-        for x in data
-    ]
-    return periods
+    return [x["frl_publish"] for x in data]
 
 
 def scrap_tournament(event_id: int | str) -> None:
@@ -97,11 +96,7 @@ def scrap_tournament(event_id: int | str) -> None:
         if player_id:
             players.append(int(player_id))
 
-    coll.update_one(
-        {"_id": int(event_id)},
-        {"$set": {"players": players}},
-        upsert=True
-    )
+    coll.update_one({"_id": int(event_id)}, {"$set": {"players": players}}, upsert=True)
 
 
 def scrap_country_period(federation: str, period: str) -> None:
@@ -139,7 +134,7 @@ def scrap_country_period(federation: str, period: str) -> None:
             coll.update_one(
                 {"_id": int(event_id)},
                 {"$set": {"country": federation, "name": event, "start": start_date}},
-                upsert=True
+                upsert=True,
             )
             time.sleep(0.1)
 

@@ -8,55 +8,54 @@ from datetime import datetime
 
 import mysql.connector
 
-from . import PGN_DIR, DOWNLOAD_DIR, CPP_BIN_DIR, IMPORT_TABLE, ALL_GAMES_TABLE, POLAND_GAMES_TABLE
+from .. import decode_data, removeDuplicates, removeSimilar, settings
+from ..players_names.fill_import import fill_black, fill_event, fill_sites, fill_white
+from . import (
+    ALL_GAMES_TABLE,
+    CPP_BIN_DIR,
+    DOWNLOAD_DIR,
+    IMPORT_TABLE,
+    PGN_DIR,
+    POLAND_GAMES_TABLE,
+)
 from .scrap_chessbase import scrap_chessbase
+from .scrap_chessresults import scrap_chessresult
 from .scrap_lichess import scrap_lichess
 from .scrap_poland import scrap_poland
 from .scrap_twic import scrap_twic
-from .scrap_chessresults import scrap_chessresult
 from .utils import concat_pgns
-from .. import settings, removeDuplicates, removeSimilar, decode_data
-from ..players_names.fill_import import fill_event, fill_sites, fill_black, fill_white
 
 RETRIES = 5
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument(
-        "--twic",
-        action="store_true",
-        help="Download TWIC games"
-    )
+    parser.add_argument("--twic", action="store_true", help="Download TWIC games")
 
     parser.add_argument(
-        "--chessbase",
-        action="store_true",
-        help="Download ChessBase games"
+        "--chessbase", action="store_true", help="Download ChessBase games"
     )
 
-    parser.add_argument(
-        "--lichess",
-        action="store_true",
-        help="Download Lichess games"
-    )
+    parser.add_argument("--lichess", action="store_true", help="Download Lichess games")
 
     parser.add_argument(
         "--poland",
         action="store_true",
-        help="Download poland games and add also to poland database"
+        help="Download poland games and add also to poland database",
     )
 
     parser.add_argument(
-        "--chessresult",
-        action="store_true",
-        help="Download chess results games"
+        "--chessresult", action="store_true", help="Download chess results games"
     )
 
     args = parser.parse_args()
 
-    if not (args.twic or args.chessbase or args.lichess or args.poland or args.chessresult):
-        parser.error("at least one of --twic, --chessbase, --lichess, --poland or --chessresult is required")
+    if not (
+        args.twic or args.chessbase or args.lichess or args.poland or args.chessresult
+    ):
+        parser.error(
+            "at least one of --twic, --chessbase, --lichess, --poland or --chessresult is required"
+        )
     logging.basicConfig(level=logging.ERROR)
     if args.twic:
         scrap_twic()
@@ -86,10 +85,7 @@ if __name__ == '__main__':
         capture_output=True,
     )
 
-    mydb = mysql.connector.connect(
-        **settings.SETTINGS["mysql"],
-        autocommit=True
-    )
+    mydb = mysql.connector.connect(**settings.SETTINGS["mysql"], autocommit=True)
     curs = mydb.cursor()
 
     curs.execute(f"TRUNCATE TABLE `{IMPORT_TABLE}`")
@@ -106,8 +102,11 @@ if __name__ == '__main__':
     if today.month == 1:
         min_year = today.year - 1
 
-    curs.execute(f"""DELETE FROM `{IMPORT_TABLE}`
-                    WHERE Year < %s""", (min_year,))
+    curs.execute(
+        f"""DELETE FROM `{IMPORT_TABLE}`
+                    WHERE Year < %s""",
+        (min_year,),
+    )
 
     for i in range(RETRIES):
         with ThreadPoolExecutor() as executor:
@@ -125,10 +124,12 @@ if __name__ == '__main__':
             FROM `{IMPORT_TABLE}`
         """)
         all, events, sites, white, black = curs.fetchone()
-        if all - events == 0 \
-                and all - sites == 0 \
-                and all - white == 0 \
-                and all - black == 0:
+        if (
+            all - events == 0
+            and all - sites == 0
+            and all - white == 0
+            and all - black == 0
+        ):
             break
         elif i == RETRIES - 1:
             logging.error("Unable to normalize")

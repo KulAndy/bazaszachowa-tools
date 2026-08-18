@@ -1,6 +1,6 @@
 import re
-from datetime import datetime, timezone, date
-from typing import Tuple, Literal
+from datetime import UTC, date, datetime
+from typing import Literal
 from urllib.parse import urlparse
 
 import mysql.connector
@@ -17,8 +17,9 @@ TABLE = "all_games"
 
 # ---------------- Helpers ----------------
 
+
 def ms_to_date(ms: int) -> date:
-    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).date()
+    return datetime.fromtimestamp(ms / 1000, tz=UTC).date()
 
 
 def resolve_final_url(url: str) -> str:
@@ -29,13 +30,14 @@ def resolve_final_url(url: str) -> str:
 
 # ---------------- Broadcast parsing ----------------
 
+
 def parse_broadcast_url(
-        url: str
+    url: str,
 ) -> (
-        Tuple[Literal["tournament"], str] |
-        Tuple[Literal["tournament"], str, str] |
-        Tuple[Literal["round"], str, str, str] |
-        None
+    tuple[Literal["tournament"], str]
+    | tuple[Literal["tournament"], str, str]
+    | tuple[Literal["round"], str, str, str]
+    | None
 ):
     parts = urlparse(url).path.strip("/").split("/")
 
@@ -87,11 +89,10 @@ def extract_round_date(data: dict) -> date | None:
 
 # ---------------- Study parsing ----------------
 
-def parse_study_url(url: str) -> (
-    Tuple[Literal["study"], str] |
-    Tuple[Literal["chapter"], str, str] |
-    None
-):
+
+def parse_study_url(
+    url: str,
+) -> tuple[Literal["study"], str] | tuple[Literal["chapter"], str, str] | None:
     parts = urlparse(url).path.strip("/").split("/")
 
     if len(parts) == 2 and parts[0] == "study":
@@ -126,7 +127,7 @@ def fetch_study_pgn(study_id: str, chapter_id: str | None = None) -> str:
 PGN_DATE_RE = re.compile(r'\[(UTCDate|Date)\s+"(\d{4})\.(\d{2})\.(\d{2})"\]')
 
 
-def extract_pgn_date(pgn: str) -> Tuple[int, int, int] | None:
+def extract_pgn_date(pgn: str) -> tuple[int, int, int] | None:
     for line in pgn.splitlines():
         m = PGN_DATE_RE.match(line)
         if m:
@@ -173,9 +174,7 @@ for row in rows:
                 game_date = extract_round_date(data)
 
             if game_date:
-                updates.append(
-                    (game_date.year, game_date.month, game_date.day, siteid)
-                )
+                updates.append((game_date.year, game_date.month, game_date.day, siteid))
             else:
                 print("No broadcast date", url)
             continue

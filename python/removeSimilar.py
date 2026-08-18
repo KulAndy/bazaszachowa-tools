@@ -21,7 +21,7 @@ def init_db_pool() -> None:
         pool_name="my_pool",
         pool_size=POOL_SIZE,
         pool_reset_session=True,
-        **SETTINGS["mysql"]
+        **SETTINGS["mysql"],
     )
 
 
@@ -51,7 +51,7 @@ def fetch_game_details(table: str, ids: list[str]) -> list[tuple]:
     cursor = connection.cursor(buffered=True)
     try:
         ids = re.sub(r"[\[\]]", "", ",".join(ids))
-        sql = fr"""
+        sql = rf"""
         SELECT {table}_games.id, moves_blob,
         a1.id as whiteID, REGEXP_REPLACE(a1.fullname, "[\\s,.]+", " ") as white,
         a2.id as blackID, REGEXP_REPLACE(a2.fullname, "[\\s,.]+", " ") as black
@@ -82,8 +82,12 @@ def process_year(year, table, lock, duplicates):
             connection.autocommit = True
             cursor = connection.cursor()
             try:
-                update_white_sql = f"UPDATE {table}_games SET whiteID = %s WHERE id = %s"
-                update_black_sql = f"UPDATE {table}_games SET blackID = %s WHERE id = %s"
+                update_white_sql = (
+                    f"UPDATE {table}_games SET whiteID = %s WHERE id = %s"
+                )
+                update_black_sql = (
+                    f"UPDATE {table}_games SET blackID = %s WHERE id = %s"
+                )
                 update_event_sql = f"""
                 UPDATE {table}_games as t1
                 JOIN {table}_games as t2
@@ -113,7 +117,9 @@ def process_year(year, table, lock, duplicates):
                 params1 = []
                 params2 = []
                 for i in range(1, len(games)):
-                    game_id1, moves1, white_id1, white1, black_id1, black1 = games[i - 1]
+                    game_id1, moves1, white_id1, white1, black_id1, black1 = games[
+                        i - 1
+                    ]
                     game_id2, moves2, white_id2, white2, black_id2, black2 = games[i]
                     similar = False
 
@@ -178,7 +184,6 @@ def main(table) -> int | None:
     global db_pool
     init_db_pool()
     try:
-
         connection = db_pool.get_connection()
         cursor = connection.cursor()
         cursor.execute(f"SELECT DISTINCT Year FROM `{table}_games`")

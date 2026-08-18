@@ -1,12 +1,11 @@
 import os
 import re
-from pathlib import Path
-import glob
 import shutil
+from pathlib import Path
 
 
 def clean_pgn(pgn_path: Path):
-    with open(pgn_path, "r", encoding="utf-8", errors="ignore") as f:
+    with open(pgn_path, encoding="utf-8", errors="ignore") as f:
         text = f.read()
 
     # 1. Remove PGN comments {...}

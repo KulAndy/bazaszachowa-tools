@@ -2,11 +2,10 @@ from urllib.parse import quote_plus
 
 import mysql.connector
 from pymongo import MongoClient
+
 from settings import SETTINGS
 
-mydb = mysql.connector.connect(
-    **SETTINGS["mysql"]
-)
+mydb = mysql.connector.connect(**SETTINGS["mysql"])
 
 MONGO_URI = (
     f"mongodb://{quote_plus(SETTINGS['mongo']['user'])}:"
@@ -16,7 +15,7 @@ MONGO_URI = (
 MONGO_COLLECTION = "poland_tournaments"
 mongo = MongoClient(MONGO_URI)
 
-mdb = mongo[SETTINGS['mongo']['database']]
+mdb = mongo[SETTINGS["mongo"]["database"]]
 coll = mdb[MONGO_COLLECTION]
 
 if __name__ == "__main__":
@@ -32,11 +31,9 @@ ON p2.fullname = subtitutions.substitute
     for row in rows:
         fullname_id, substitue_id = row
         coll.update_many(
-            {"players": substitue_id},
-            {"$addToSet": {"players": fullname_id}}
+            {"players": substitue_id}, {"$addToSet": {"players": fullname_id}}
         )
 
         coll.update_many(
-            {"players": substitue_id},
-            {"$pull": {"players": substitue_id}}
+            {"players": substitue_id}, {"$pull": {"players": substitue_id}}
         )

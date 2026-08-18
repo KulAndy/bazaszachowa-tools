@@ -1,8 +1,10 @@
-import mysql.connector
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
+import mysql.connector
+
 from .. import settings
+
 
 def fill_sites(table):
     mydb = mysql.connector.connect(**settings.SETTINGS["mysql"])

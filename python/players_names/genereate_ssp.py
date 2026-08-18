@@ -1,11 +1,10 @@
 import json
 
 import mysql.connector
+
 from settings import SETTINGS
 
-mydb = mysql.connector.connect(
-    **SETTINGS["mysql"]
-)
+mydb = mysql.connector.connect(**SETTINGS["mysql"])
 
 curs = mydb.cursor()
 
@@ -16,7 +15,7 @@ ON subtitutions.fullname = fide_players.name
 GROUP BY fullname """
 
 curs.execute(sql)
-with open("my_spell.ssp", 'w') as file:
+with open("my_spell.ssp", "w") as file:
     file.write('@PLAYER "., -_*"\n')
     while row := curs.fetchone():
         fullname, fide_id, substitutions_string = row

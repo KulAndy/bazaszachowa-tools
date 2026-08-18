@@ -2,11 +2,10 @@ import mysql.connector
 
 from settings import SETTINGS
 
-mydb = mysql.connector.connect(
-    **SETTINGS['mysql']
-)
+mydb = mysql.connector.connect(**SETTINGS["mysql"])
 mydb.autocommit = True
 curs = mydb.cursor()
+
 
 def main():
     sql = """
@@ -94,5 +93,7 @@ def main():
     # """
     for query in sql.split(";"):
         curs.execute(query)
+
+
 if __name__ == "__main__":
     main()

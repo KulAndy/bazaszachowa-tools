@@ -14,6 +14,7 @@ import requests
 from bs4 import BeautifulSoup
 from pymongo import MongoClient
 from unidecode import unidecode
+
 from .. import settings
 
 TMP_ROOT = "tmp"
@@ -38,37 +39,40 @@ MONGO_URI = (
 MONGO_COLLECTION = "poland_tournaments"
 
 client = MongoClient(MONGO_URI)
-db = client[settings.SETTINGS['mongo']['database']]
+db = client[settings.SETTINGS["mongo"]["database"]]
 coll = db[MONGO_COLLECTION]
 
 
 def get_tournaments_in_base() -> list[int]:
-    tournaments = db.poland_tournaments.distinct("_id")
-    return tournaments
+    return db.poland_tournaments.distinct("_id")
 
 
 IMPORTED_TOURNAMENTS = get_tournaments_in_base()
 
 
 def list_files_in_directory(directory: str) -> list[str]:
-    return [os.path.join(root, file) for root, dirs, files in os.walk(directory) for file in files]
+    return [
+        os.path.join(root, file)
+        for root, dirs, files in os.walk(directory)
+        for file in files
+    ]
 
 
 def sanitize_xml(file_path: str) -> None:
     try:
-        with open(file_path, 'r', encoding='utf-8', errors='replace') as file:
+        with open(file_path, encoding="utf-8", errors="replace") as file:
             content = file.read()
 
-        entity_pattern = re.compile(r'&#x[0-9A-Fa-f]+;')
+        entity_pattern = re.compile(r"&#x[0-9A-Fa-f]+;")
         entities = entity_pattern.findall(content)
 
         for entity in entities:
             unescaped_char = html.unescape(entity)
             content = content.replace(entity, unescaped_char)
 
-        sanitized_content = re.sub(r'[\x00-\x1F\x7F\x80-\x9F]', '', content)
+        sanitized_content = re.sub(r"[\x00-\x1F\x7F\x80-\x9F]", "", content)
 
-        with open(file_path, 'w', encoding='utf-8') as file:
+        with open(file_path, "w", encoding="utf-8") as file:
             file.write(sanitized_content)
     except Exception as e:
         logging.exception(f"Error sanitizing XML file {file_path}: {e}")
@@ -110,17 +114,14 @@ def get_page_url(tournamentid: str | int) -> str | None:
         if not link_tag:
             continue
 
-        href = link_tag.get("href", "").strip()
-        return href
+        return link_tag.get("href", "").strip()
 
     return None
 
 
 def process_tournament(args: tuple[str, str | None]) -> None:
     file, url = args
-    mydb = mysql.connector.connect(
-        **settings.SETTINGS["mysql"]
-    )
+    mydb = mysql.connector.connect(**settings.SETTINGS["mysql"])
     mydb.autocommit = True
     curs = mydb.cursor()
     tournamentid = os.path.splitext(os.path.basename(file))[0]
@@ -134,7 +135,7 @@ def process_tournament(args: tuple[str, str | None]) -> None:
     tmp_dir = os.path.join(TMP_ROOT, str(tournamentid))
 
     try:
-        with zipfile.ZipFile(file, 'r') as zip_ref:
+        with zipfile.ZipFile(file, "r") as zip_ref:
             zip_ref.extract("tournament.xml", tmp_dir)
     except Exception as e:
         logging.warning(f"Cannot extract {file}: {e}")
@@ -151,28 +152,33 @@ def process_tournament(args: tuple[str, str | None]) -> None:
         logging.exception(f"Failed to parse XML file {tournament_file}: {e}")
         return
     except Exception as e:
-        logging.exception(f"Unexpected error processing XML file {tournament_file}: {e}")
+        logging.exception(
+            f"Unexpected error processing XML file {tournament_file}: {e}"
+        )
         return
 
     if not url:
         try:
-            xml_text = open(tournament_file, "r", encoding="utf-8", errors="ignore").read()
-            m = re.search(r"https://www\.chessmanager\.com/pl/tournaments/\d+", xml_text)
-            if m:
-                url = m.group(0)
-        except Exception as e:
+            with open(tournament_file, encoding="utf-8", errors="ignore") as xml_file:
+                xml_text = xml_file.read()
+                m = re.search(
+                    r"https://www\.chessmanager\.com/pl/tournaments/\d+", xml_text
+                )
+                if m:
+                    url = m.group(0)
+        except Exception:
             url = get_page_url(tournamentid)
 
     tour_name_node = root.find(".//tour_name")
     if tour_name_node is not None:
-        name = tour_name_node.attrib['value'].strip()
+        name = tour_name_node.attrib["value"].strip()
 
     start_date_node = root.find(".//start_date")
     if start_date_node is not None:
         try:
-            year = start_date_node.attrib['year'].strip()
-            month = start_date_node.attrib['month'].strip()
-            day = start_date_node.attrib['day'].strip()
+            year = start_date_node.attrib["year"].strip()
+            month = start_date_node.attrib["month"].strip()
+            day = start_date_node.attrib["day"].strip()
             start = datetime.strptime(f"{year}-{month}-{day}", "%Y-%m-%d")
         except Exception:
             pass
@@ -180,9 +186,9 @@ def process_tournament(args: tuple[str, str | None]) -> None:
     end_date_node = root.find(".//end_date")
     if end_date_node is not None:
         try:
-            year = end_date_node.attrib['year'].strip()
-            month = end_date_node.attrib['month'].strip()
-            day = end_date_node.attrib['day'].strip()
+            year = end_date_node.attrib["year"].strip()
+            month = end_date_node.attrib["month"].strip()
+            day = end_date_node.attrib["day"].strip()
             end = datetime.strptime(f"{year}-{month}-{day}", "%Y-%m-%d")
         except Exception:
             pass
@@ -239,16 +245,22 @@ def process_tournament(args: tuple[str, str | None]) -> None:
             names.append((name_surname,))
 
     if names:
-        curs.executemany("""
+        curs.executemany(
+            """
             INSERT IGNORE INTO `players`(`fullname`)
             VALUES (%s)
-        """, names)
+        """,
+            names,
+        )
 
         for name in names:
-            curs.execute("""
+            curs.execute(
+                """
                 SELECT id FROM `players`
                 WHERE fullname like %s
-            """, name)
+            """,
+                name,
+            )
             playerid = curs.fetchone()
 
             db.poland_tournaments.update_one(
@@ -261,7 +273,7 @@ def process_tournament(args: tuple[str, str | None]) -> None:
 
 def import_swsx_s() -> None:
     while True:
-        dirs = ['swsx', 'swdx', 'sws', 'swd']
+        dirs = ["swsx", "swdx", "sws", "swd"]
         swsx_files = []
         for directory in dirs:
             files = list_files_in_directory(directory)
@@ -286,7 +298,7 @@ def scrap_tournaments(year: int) -> list[list[str]] | None:
         res.raise_for_status()
     except Exception as e:
         logging.exception(f"Request error: {e}")
-        return
+        return None
     res.encoding = "ISO-8859-2"
 
     soup = BeautifulSoup(res.text, "html.parser")
@@ -294,7 +306,7 @@ def scrap_tournaments(year: int) -> list[list[str]] | None:
     tables = soup.find_all("table")
     if not tables:
         logging.warning("No tables found")
-        return
+        return None
 
     EXPECTED_HEADERS = [
         "lp",
@@ -304,7 +316,7 @@ def scrap_tournaments(year: int) -> list[list[str]] | None:
         "nazwa turnieju",
         "miejsce",
         "sędzia",
-        "www"
+        "www",
     ]
 
     target_table = None
@@ -314,21 +326,21 @@ def scrap_tournaments(year: int) -> list[list[str]] | None:
         if not rows:
             continue
 
-        header_cells = [c.get_text(strip=True).lower() for c in rows[0].find_all(["td", "th"])]
-        if len(header_cells) == 8 and all(
-                h in header_cells for h in EXPECTED_HEADERS
-        ):
+        header_cells = [
+            c.get_text(strip=True).lower() for c in rows[0].find_all(["td", "th"])
+        ]
+        if len(header_cells) == 8 and all(h in header_cells for h in EXPECTED_HEADERS):
             target_table = table
             break
 
     if target_table is None:
         logging.warning("Could not find tournament table")
-        return
+        return None
 
     rows = target_table.find_all("tr")
     if len(rows) <= 1:
         logging.warning("No tournament data found")
-        return
+        return None
 
     data = []
 
@@ -357,7 +369,10 @@ def extract_scrapped_data(rows: list[list[str]] | None) -> None:
             continue
         file = ""
         try:
-            res = requests.get(f"http://www.cr-pzszach.pl/ew/ew/swsswd/{tournamentid}.swsx", headers=HEADERS)
+            res = requests.get(
+                f"http://www.cr-pzszach.pl/ew/ew/swsswd/{tournamentid}.swsx",
+                headers=HEADERS,
+            )
             res.raise_for_status()
 
             filename = f"swsx/{tournamentid}.swsx"
@@ -368,7 +383,10 @@ def extract_scrapped_data(rows: list[list[str]] | None) -> None:
             file = filename
         except Exception:
             try:
-                res = requests.get(f"http://www.cr-pzszach.pl/ew/ew/swsswd/{tournamentid}.swdx", headers=HEADERS)
+                res = requests.get(
+                    f"http://www.cr-pzszach.pl/ew/ew/swsswd/{tournamentid}.swdx",
+                    headers=HEADERS,
+                )
                 res.raise_for_status()
 
                 filename = f"swdx/{tournamentid}.swdx"

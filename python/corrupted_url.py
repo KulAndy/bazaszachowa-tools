@@ -5,9 +5,7 @@ import requests
 
 from settings import SETTINGS
 
-mydb = mysql.connector.connect(
-    **SETTINGS["mysql"]
-)
+mydb = mysql.connector.connect(**SETTINGS["mysql"])
 
 
 def url_exists(url: str, timeout: int = 5) -> bool:
@@ -17,9 +15,7 @@ def url_exists(url: str, timeout: int = 5) -> bool:
             allow_redirects=True,
             timeout=timeout,
             stream=True,
-            headers={
-                "User-Agent": "Mozilla/5.0"
-            }
+            headers={"User-Agent": "Mozilla/5.0"},
         )
         return r.status_code < 400
     except requests.RequestException:

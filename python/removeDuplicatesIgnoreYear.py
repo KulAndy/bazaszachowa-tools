@@ -2,9 +2,10 @@ import re
 import sys
 import threading
 import traceback
-from typing import Generator
+from collections.abc import Generator
 
 from mysql.connector import pooling
+
 from settings import SETTINGS
 
 POOL_SIZE = 8
@@ -18,7 +19,7 @@ def init_db_pool() -> None:
         pool_name="my_pool",
         pool_size=POOL_SIZE,
         pool_reset_session=True,
-        **SETTINGS["mysql"]
+        **SETTINGS["mysql"],
     )
 
 
@@ -75,11 +76,7 @@ def fetch_game_details(table: str, ids: list[str]) -> list[tuple]:
             connection.close()
 
 
-def process_duplicates(
-        table: str,
-        lock: threading.Lock,
-        duplicates: list[int]
-) -> None:
+def process_duplicates(table: str, lock: threading.Lock, duplicates: list[int]) -> None:
     try:
         for rows in fetch_duplicate_games(table):
             local_duplicates = 0
@@ -97,11 +94,13 @@ def process_duplicates(
                     cursor = connection.cursor()
 
                     delete_game_sql = f"DELETE FROM {table}_games WHERE id = %s"
-                    update_game_sql = (f"UPDATE {table}_games SET "
-                                       "Year = %s, "
-                                       "Month = %s, "
-                                       "Day = %s "
-                                       "WHERE id = %s")
+                    update_game_sql = (
+                        f"UPDATE {table}_games SET "
+                        "Year = %s, "
+                        "Month = %s, "
+                        "Day = %s "
+                        "WHERE id = %s"
+                    )
 
                     delete_params = []
                     update_params = []

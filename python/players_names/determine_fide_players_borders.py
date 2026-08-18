@@ -1,5 +1,6 @@
 #!/usr/local/bin/python3
 
+import contextlib
 import os
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -7,18 +8,19 @@ import zipfile
 from datetime import datetime
 
 import mysql.connector
+
 from settings import SETTINGS
 
 
 def get_month_year_list(start_date_str):
-    start_date = datetime.strptime(start_date_str, '%d-%m-%Y')
+    start_date = datetime.strptime(start_date_str, "%d-%m-%Y")
     current_date = datetime.now()
 
     month_year_list = []
 
     while start_date <= current_date:
-        month_name = start_date.strftime('%B')
-        year = start_date.strftime('%y')
+        month_name = start_date.strftime("%B")
+        year = start_date.strftime("%y")
         month_year_list.append([month_name, year])
 
         if start_date.month == 12:
@@ -39,20 +41,17 @@ def import_list(filename):
     tree = ET.parse(filename)
     root = tree.getroot()
 
-    cnx = mysql.connector.connect(
-        **SETTINGS['mysql']
-    )
+    cnx = mysql.connector.connect(**SETTINGS["mysql"])
     cursor = cnx.cursor()
 
     cnx.start_transaction()
 
     players_query = (
-            "INSERT IGNORE INTO fide_players "
-            "(fideid, name, country, sex, title, w_title, o_title, "
-            "rating, rapid_rating, "
-            "blitz_rating, birthday) "
-            "VALUES (" + ",".join(["%s"] * 11) +
-            ") "
+        "INSERT IGNORE INTO fide_players "
+        "(fideid, name, country, sex, title, w_title, o_title, "
+        "rating, rapid_rating, "
+        "blitz_rating, birthday) "
+        "VALUES (" + ",".join(["%s"] * 11) + ") "
     )
 
     border_query = (
@@ -98,11 +97,9 @@ def import_list(filename):
             blitz_rating = None
             blitz_rating_int = None
 
-        ratings = [x
-                   for x in
-                   [rating_int, rapid_rating_int, blitz_rating_int]
-                   if x is not None
-                   ]
+        ratings = [
+            x for x in [rating_int, rapid_rating_int, blitz_rating_int] if x is not None
+        ]
         min_rating = min(ratings)
         max_rating = max(ratings)
 
@@ -124,11 +121,7 @@ def import_list(filename):
             birthday,
         )
 
-        border_data = (
-            fideid,
-            max_rating,
-            min_rating
-        )
+        border_data = (fideid, max_rating, min_rating)
 
         border_params.append(border_data)
         player_params.append(player_data)
@@ -146,10 +139,8 @@ def import_list(filename):
     cursor.close()
     cnx.close()
 
-    try:
+    with contextlib.suppress(OSError):
         os.remove(filename)
-    except OSError:
-        pass
 
 
 def xml_addr(month_name, year_short):

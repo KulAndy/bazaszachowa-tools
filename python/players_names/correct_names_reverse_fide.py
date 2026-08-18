@@ -2,8 +2,9 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import mysql.connector
-from settings import SETTINGS
 from unidecode import unidecode
+
+from settings import SETTINGS
 
 THREADS = 6
 BATCH_SIZE = 500
@@ -24,12 +25,15 @@ def process_fullname(fullname):
             return
 
         canonical_first = parts[0]
-        canonical_regex = r'^' + r'([\s,]+)'.join(map(re.escape, parts)) + r'$'
+        canonical_regex = r"^" + r"([\s,]+)".join(map(re.escape, parts)) + r"$"
 
-        cur.execute("""
+        cur.execute(
+            """
             SELECT distinct name FROM fide_players 
             WHERE name LIKE %s AND name REGEXP %s 
-        """, (canonical_first + '%', canonical_regex))
+        """,
+            (canonical_first + "%", canonical_regex),
+        )
         if rows := cur.fetchall():
             if len(rows) == 1:
                 row = rows[0]
@@ -41,7 +45,7 @@ def process_fullname(fullname):
                             "UPDATE `players` "
                             "SET `fullname` = %s "
                             "WHERE `players`.`fullname` = %s",
-                            (fide_name, fullname)
+                            (fide_name, fullname),
                         )
 
                     else:
@@ -49,19 +53,18 @@ def process_fullname(fullname):
                             "INSERT IGNORE INTO "
                             "subtitutions (fullname, substitute) "
                             "VALUES (%s, %s)",
-                            (fide_name, fullname)
+                            (fide_name, fullname),
                         )
                     conn.commit()
             return
 
-        fulltext_name = " ".join([
-            f"+{x}"
-            for x in [
-                    re.sub(r"[^\d\sa-z]", "", x.strip())
-                    for x in parts
-                ]
-            if len(x) > 1
-        ])
+        fulltext_name = " ".join(
+            [
+                f"+{x}"
+                for x in [re.sub(r"[^\d\sa-z]", "", x.strip()) for x in parts]
+                if len(x) > 1
+            ]
+        )
 
         sql = """
                 SELECT distinct name FROM fide_players 
@@ -76,18 +79,18 @@ def process_fullname(fullname):
             rotated_parts = parts[i:] + parts[:i]
 
             first_part = rotated_parts[0]
-            regex_pattern = r"^" + r"([\s,]+)".join(map(re.escape, rotated_parts)) + r"$"
+            regex_pattern = (
+                r"^" + r"([\s,]+)".join(map(re.escape, rotated_parts)) + r"$"
+            )
 
-            cur.execute(sql,
-                        (first_part + '%', regex_pattern) + params
-                        )
+            cur.execute(sql, (first_part + "%", regex_pattern) + params)
             rows = cur.fetchall()
             if len(rows) == 1:
                 row = rows[0]
                 print(f"|{fullname}| > |{row[0]}|")
                 cur.execute(
                     "INSERT IGNORE INTO subtitutions (fullname, substitute) VALUES (%s, %s)",
-                    (row[0], fullname)
+                    (row[0], fullname),
                 )
                 conn.commit()
                 break
@@ -102,9 +105,7 @@ def process_fullname(fullname):
 
 
 def fetch_fullnames():
-    conn = mysql.connector.connect(
-        **SETTINGS["mysql"]
-    )
+    conn = mysql.connector.connect(**SETTINGS["mysql"])
     cursor = conn.cursor()
     cursor.execute("""
         SELECT all_players.fullname

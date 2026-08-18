@@ -1,19 +1,19 @@
 import html
-import re
 import os
+import re
+import tempfile
 import traceback
 import zipfile
-import tempfile
 from datetime import datetime
 from io import StringIO
 from urllib.parse import quote_plus
-import chess.pgn
 
+import chess.pgn
 from pymongo import MongoClient
 
-from . import PGN_DIR
 from .. import settings
 from ..chess_scrappers.parser import lichess_download, scrap_livechess
+from . import PGN_DIR
 
 os.makedirs(PGN_DIR, exist_ok=True)
 
@@ -26,7 +26,7 @@ MONGO_URI = (
 MONGO_COLLECTION = "poland_tournaments"
 
 client = MongoClient(MONGO_URI)
-db = client[settings.SETTINGS['mongo']['database']]
+db = client[settings.SETTINGS["mongo"]["database"]]
 coll = db[MONGO_COLLECTION]
 
 CR_HEADERS = {
@@ -44,20 +44,24 @@ CR_HEADERS = {
 
 try:
     from curl_cffi import requests
+
     session = requests.Session(impersonate="chrome")
 except ImportError:
     import requests
+
     session = requests.Session()
 
-session.headers.update({
-    "User-Agent": (
-        "Mozilla/5.0 (X11; Linux x86_64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/151.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "pl-PL,pl;q=0.9",
-})
+session.headers.update(
+    {
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/151.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "pl-PL,pl;q=0.9",
+    }
+)
 session.get("https://www.chessmanager.com/")
 session.get("https://www.chessmanager.com/pl-pl/tournaments/")
 session.get("https://www.chessmanager.com/robots.txt")
@@ -85,7 +89,7 @@ def download_swsx(tour_id: int | str) -> bytes | None:
 
 def sanitize_xml(file_path: str) -> None:
     try:
-        with open(file_path, "r", encoding="utf-8", errors="replace") as file:
+        with open(file_path, encoding="utf-8", errors="replace") as file:
             content = file.read()
 
         content = html.unescape(content)
@@ -105,7 +109,7 @@ def extract_tournament_links(xml_file: str) -> set[str]:
     try:
         sanitize_xml(xml_file)
 
-        with open(xml_file, "r", encoding="utf-8", errors="ignore") as file:
+        with open(xml_file, encoding="utf-8", errors="ignore") as file:
             xml_text = file.read()
 
         for match in re.findall(r'https?://[^\s"\'<>]+', xml_text):
@@ -147,7 +151,7 @@ def pzszach_extract_pgns(tour_id: int | str) -> str:
                 if filename.lower().endswith(".pgn"):
                     path = os.path.join(root, filename)
 
-                    with open(path, "r", encoding="utf-8", errors="ignore") as file:
+                    with open(path, encoding="utf-8", errors="ignore") as file:
                         pgn += file.read()
                         pgn += "\n"
 
@@ -172,9 +176,13 @@ def pzszach_extract_pgns(tour_id: int | str) -> str:
 
 
 def chessmanager_scrap_pgns(link: str) -> str:
-    res = session.get(link, timeout=20, headers={
-        "Referer": "https://www.chessmanager.com/",
-    })
+    res = session.get(
+        link,
+        timeout=20,
+        headers={
+            "Referer": "https://www.chessmanager.com/",
+        },
+    )
     if res.status_code in [403, 404]:
         return ""
     res.raise_for_status()
@@ -207,11 +215,7 @@ def chessmanager_scrap_pgns(link: str) -> str:
 
 
 def scrap_poland() -> None:
-    docs = coll.find({
-        "scanned": {
-            "$ne": True
-        }
-    })
+    docs = coll.find({"scanned": {"$ne": True}})
 
     with open(PGN_DIR / "poland_games.pgn", "a", encoding="utf-8") as file:
         for doc in docs:
@@ -239,26 +243,21 @@ def scrap_poland() -> None:
                         pgn = ""
                         for game in games:
                             try:
-                                game_date = datetime.strptime(game.headers["Date"], "%Y.%m.%d")
+                                game_date = datetime.strptime(
+                                    game.headers["Date"], "%Y.%m.%d"
+                                )
                                 if game_date.date() < start_date.date():
                                     raise ValueError
                                 if game_date.date() > end_date.date():
                                     raise ValueError
                             except Exception:
-                                game.headers["Date"] = start_date.strftime('%Y.%m.%d')
+                                game.headers["Date"] = start_date.strftime("%Y.%m.%d")
                             pgn += str(game).strip() + "\n\n"
 
                         file.write(pgn)
                         file.flush()
 
-                coll.update_one(
-                    {"_id": tour_id},
-                    {
-                        "$set": {
-                            "scanned": True
-                        }
-                    }
-                )
+                coll.update_one({"_id": tour_id}, {"$set": {"scanned": True}})
 
             except Exception as e:
                 print("Tournament error:", tour_id, e)

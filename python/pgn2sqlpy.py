@@ -1,7 +1,6 @@
 import re
 import sys
 from os.path import exists
-from typing import Tuple, Optional, Dict
 
 import chess
 import chess.pgn
@@ -10,13 +9,10 @@ import chess.pgn
 def validate_date(date_str: str) -> bool:
     if len(date_str) < 4:
         return False
-    for i in range(4):
-        if not date_str[i].isdigit():
-            return False
-    return True
+    return all(date_str[i].isdigit() for i in range(4))
 
 
-def parse_date(date_str: str) -> Tuple[int | None, int | None, int | None]:
+def parse_date(date_str: str) -> tuple[int | None, int | None, int | None]:
     date_regex = r"(\d+)(?:[^\d]+(\d+)(?:[^\d]+(\d+))?)?"
     match = re.search(date_regex, date_str)
     if match:
@@ -27,7 +23,7 @@ def parse_date(date_str: str) -> Tuple[int | None, int | None, int | None]:
     return None, None, None
 
 
-def pack_move(src: chess.Square, dest: chess.Square, piece: Optional[chess.PieceType]):
+def pack_move(src: chess.Square, dest: chess.Square, piece: chess.PieceType | None):
     return (src << 10) | (dest << 4) | (piece & 0x07)
 
 
@@ -52,8 +48,17 @@ def main():
             sys.exit()
 
     pgn_keys = [
-        "Event", "Site", "Year", "Month", "Day", "Round",
-        "White", "Black", "Result", "WhiteElo", "BlackElo"
+        "Event",
+        "Site",
+        "Year",
+        "Month",
+        "Day",
+        "Round",
+        "White",
+        "Black",
+        "Result",
+        "WhiteElo",
+        "BlackElo",
     ]
 
     prefix = f"INSERT IGNORE INTO {table_name} (moves_blob, {', '.join(pgn_keys)}) VALUES (0x"
@@ -66,7 +71,7 @@ def main():
                 if game is None:
                     break
 
-                game_data: Dict[str, int | None | str] = dict.fromkeys(pgn_keys, None)
+                game_data: dict[str, int | None | str] = dict.fromkeys(pgn_keys, None)
                 game_data["Year"] = game_data["Month"] = game_data["Day"] = None
                 moves_blob = bytearray()
 
@@ -79,7 +84,14 @@ def main():
                                     game_data[key] = int(value)
                                 except ValueError:
                                     game_data[key] = None
-                            elif key in ("Event", "Site", "Round", "White", "Black", "Result"):
+                            elif key in (
+                                "Event",
+                                "Site",
+                                "Round",
+                                "White",
+                                "Black",
+                                "Result",
+                            ):
                                 game_data[key] = value if value else "?"
                             elif key == "Date":
                                 year, month, day = parse_date(value)
@@ -116,7 +128,9 @@ def main():
                     print(f"\rProcessed {counter} games", end="")
 
                 except Exception as e:
-                    error_log.write(f"Error processing game: {game.headers.get('Event', '?')}\n{e}\n")
+                    error_log.write(
+                        f"Error processing game: {game.headers.get('Event', '?')}\n{e}\n"
+                    )
 
     print(f"\nProcessed {counter} games. Errors logged to errors.log.")
 

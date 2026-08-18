@@ -3,8 +3,9 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import mysql.connector
-from settings import SETTINGS
 from unidecode import unidecode
+
+from settings import SETTINGS
 
 THREADS = 6
 CSV_PATH = "./rejestr_czlonkow.csv"
@@ -23,11 +24,7 @@ def get_connection():
 
 
 def normalize_key(name: str) -> str:
-    return unidecode(
-        name.replace(",", "")
-            .strip()
-            .lower()
-    )
+    return unidecode(name.replace(",", "").strip().lower())
 
 
 def normalize_csv_name(raw_name: str) -> str:
@@ -46,7 +43,7 @@ def normalize_csv_name(raw_name: str) -> str:
 def load_member_registry():
     registry = {}
 
-    with open(CSV_PATH, "r", encoding=CSV_ENCODING, newline="") as f:
+    with open(CSV_PATH, encoding=CSV_ENCODING, newline="") as f:
         reader = csv.DictReader(f, delimiter=CSV_DELIMITER)
         for row in reader:
             raw_name = row.get("NAZWISKO_IMIE", "").strip()
@@ -93,7 +90,7 @@ def process_fullname(fullname: str, registry: dict):
                     print(f"|{fullname}| -> |{unified}|")
                     cur.execute(
                         "INSERT IGNORE INTO subtitutions (fullname, substitute) VALUES (%s, %s)",
-                        (unified, fullname)
+                        (unified, fullname),
                     )
                     conn.commit()
                 break
@@ -116,7 +113,9 @@ if __name__ == "__main__":
     print(f"Processing {len(fullnames)} Polish player names...")
 
     with ThreadPoolExecutor(max_workers=THREADS) as executor:
-        futures = [executor.submit(process_fullname, name, registry) for name in fullnames]
+        futures = [
+            executor.submit(process_fullname, name, registry) for name in fullnames
+        ]
         for future in as_completed(futures):
             future.result()
 

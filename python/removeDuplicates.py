@@ -21,7 +21,7 @@ def init_db_pool() -> None:
         pool_name="my_pool",
         pool_size=POOL_SIZE,
         pool_reset_session=True,
-        **SETTINGS["mysql"]
+        **SETTINGS["mysql"],
     )
 
 
@@ -64,10 +64,10 @@ def fetch_game_details(table: str, ids: list[str]) -> list[tuple]:
 
 
 def process_year(
-        year: int,
-        table: str,
-        lock: threading.Lock,
-        duplicates: list[int],
+    year: int,
+    table: str,
+    lock: threading.Lock,
+    duplicates: list[int],
 ) -> None:
     logging.info(year)
     if year in unique_years:

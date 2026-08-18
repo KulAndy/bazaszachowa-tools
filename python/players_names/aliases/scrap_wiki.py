@@ -1,15 +1,15 @@
-import re
 import logging
+import re
+
+import mysql.connector
 import requests
 import unidecode
 from bs4 import BeautifulSoup
-import mysql.connector
 
 from settings import SETTINGS
 
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
+    level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s"
 )
 
 log = logging.getLogger("wiki-scraper")
@@ -18,13 +18,11 @@ mydb = mysql.connector.connect(**SETTINGS["mysql"])
 mydb.autocommit = True
 curs = mydb.cursor()
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; wiki-scraper/1.0)"
-}
+HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; wiki-scraper/1.0)"}
 
 IGNORE_LINKS = [
     "/wiki/Szachy",
-    "/wiki/Zwi%C4%85zek_Socjalistycznych_Republik_Socjalistycznych"
+    "/wiki/Zwi%C4%85zek_Socjalistycznych_Republik_Socjalistycznych",
 ]
 BS4_PARSER = "html.parser"
 
@@ -78,10 +76,7 @@ def scrap_wiki(url, base_url, depth=0):
 
     log.info(f"{indent}FOUND LINKS: {len(links)}")
 
-    categories = [
-        x for x in links
-        if x.startswith("/wiki/Kategoria:")
-    ]
+    categories = [x for x in links if x.startswith("/wiki/Kategoria:")]
 
     log.info(f"{indent}CATEGORIES: {len(categories)}")
 
@@ -90,10 +85,9 @@ def scrap_wiki(url, base_url, depth=0):
         substitutions += scrap_wiki(full_cat_url, base_url, depth + 1)
 
     page_links = [
-        str(x) for x in links
-        if x.startswith("/wiki/")
-        and ":" not in x
-        and x not in IGNORE_LINKS
+        str(x)
+        for x in links
+        if x.startswith("/wiki/") and ":" not in x and x not in IGNORE_LINKS
     ]
 
     log.info(f"{indent}PAGE LINKS: {len(page_links)}")
@@ -155,23 +149,25 @@ def scrap_wiki(url, base_url, depth=0):
         log.info(f"{indent}PARSED EN: {english_name}")
 
         if polish_name.count(" ") != 1 or english_name.count(" ") != 1:
-            log.warning(
-                f"{indent}INVALID NAME FORMAT: |{polish_name}|{english_name}|"
-            )
+            log.warning(f"{indent}INVALID NAME FORMAT: |{polish_name}|{english_name}|")
             continue
 
         pl_first, pl_last = polish_name.split(" ")
         en_first, en_last = english_name.split(" ")
 
-        substitutions.append((
-            unidecode.unidecode(f"{en_last}, {en_first}"),
-            f"{pl_last}, {pl_first}",
-        ))
+        substitutions.append(
+            (
+                unidecode.unidecode(f"{en_last}, {en_first}"),
+                f"{pl_last}, {pl_first}",
+            )
+        )
 
-        substitutions.append((
-            unidecode.unidecode(f"{en_last}, {en_first}"),
-            unidecode.unidecode(f"{pl_last}, {pl_first}"),
-        ))
+        substitutions.append(
+            (
+                unidecode.unidecode(f"{en_last}, {en_first}"),
+                unidecode.unidecode(f"{pl_last}, {pl_first}"),
+            )
+        )
 
     return substitutions
 

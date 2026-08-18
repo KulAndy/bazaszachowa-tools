@@ -1,0 +1,38 @@
+name: C++ workflow on Alpine
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    container:
+      image: alpine:latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          apk add --no-cache \
+            build-base \
+            cmake \
+            mariadb-connector-c-dev \
+            mysql-client
+
+      - name: Configure
+        run: cmake -S cpp -B cpp/build
+
+      - name: Build
+        run: cmake --build cpp/build --parallel 1

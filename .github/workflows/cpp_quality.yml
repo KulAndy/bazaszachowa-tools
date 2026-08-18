@@ -1,0 +1,66 @@
+name: C++ quality
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libmysqlclient-dev \
+            clang-format \
+            clang-tidy \
+            cppcheck
+
+      - name: Check formatting
+        run: |
+          clang-format \
+            --dry-run \
+            --Werror \
+            cpp/src/*.cpp
+      
+      - name: Checking sanity
+        run: |
+          cmake \
+            -S cpp \
+            -B cpp/build \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+          cmake --build cpp/build
+
+      - name: Clang-Tidy
+        run: |
+          find cpp/src \
+            -type f -name '*.cpp' -print0 |
+            xargs -0 clang-tidy \
+              -p cpp/build \
+              --header-filter='^.*cpp/src/.*'
+
+      - name: Cppcheck
+        run: |
+          cppcheck \
+            --enable=warning,style,performance,portability \
+            --error-exitcode=1 \
+            cpp/src \
+            -i cpp/chess-library

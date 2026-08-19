@@ -135,7 +135,14 @@ if __name__ == "__main__":
             executor.submit(fill_white, "all")
             executor.submit(fill_black, "all")
 
-        row = curs.fetchone()
+        curs.execute(f"""SELECT
+                COUNT(*),
+                COUNT(eventID),
+                COUNT(siteID),
+                COUNT(WhiteID),
+                COUNT(BlackID)
+            FROM `{IMPORT_TABLE}`
+        """)
 
         row = curs.fetchone()
 

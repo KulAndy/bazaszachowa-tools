@@ -28,7 +28,7 @@ jobs:
       - name: Install requirements
         run: | 
           pushd python
-          python -m pip install .
+          python -m pip install --no-require-hashes -r pylock.toml
           popd
 
       - name: Check requirements
@@ -37,7 +37,7 @@ jobs:
       - name: Install development tools
         run: |
           pushd python          
-          python -m pip install -e ".[curl_cffi, dev]"
+          python -m pip install --no-require-hashes -r pylock.dev-curl_cffi.toml
           popd
 
       - name: Ruff lint

@@ -52,8 +52,6 @@ void processBatch(MYSQL *conn, const string &table,
       continue;
     }
 
-    int game_id = atoi(row[0]);
-
     string moves_blob(row[1], lengths[1]);
 
     auto it =

@@ -46,12 +46,15 @@ void processBatch(MYSQL *conn, const string &table,
   MYSQL_ROW row;
 
   while ((row = mysql_fetch_row(result))) {
-    if (!row[0]) {
+    unsigned long *lengths = mysql_fetch_lengths(result);
+
+    if (!row[0] || !row[1]) {
       continue;
     }
 
-    const char *moves_cstr = row[1] ? row[1] : "";
-    string moves_blob(moves_cstr);
+    int game_id = atoi(row[0]);
+
+    string moves_blob(row[1], lengths[1]);
 
     auto it =
         std::find_if(eco_lines.begin(), eco_lines.end(), [&](const auto &eco) {

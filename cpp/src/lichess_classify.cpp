@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <format>
 #include <iostream>
@@ -25,25 +26,46 @@ struct EcoLine {
 void processBatch(mysql::Connection &conn, const string &table,
                   const vector<EcoLine> &eco_lines, int start_id, int end_id,
                   atomic<int> &total_updated) {
-  string query = format("SELECT id, moves_blob FROM {} "
-                        "WHERE id >= {} AND id < {} AND ecoID IS NULL "
-                        "ORDER BY id ASC LIMIT {}",
-                        table, start_id, end_id, BATCH_SIZE);
-
   try {
-    auto result = conn.queryResult(query);
+    string select_query = "SELECT id, moves_blob FROM `" + table +
+                          "` "
+                          "WHERE id >= ? "
+                          "AND id < ? "
+                          "AND ecoID IS NULL "
+                          "ORDER BY id ASC "
+                          "LIMIT ?";
+
+    auto select_stmt = conn.statement(select_query);
+
+    array<MYSQL_BIND, 3> params{};
+
+    int start = start_id;
+    int end = end_id;
+    int limit = BATCH_SIZE;
+
+    params[0].buffer_type = MYSQL_TYPE_LONG;
+    params[0].buffer = &start;
+
+    params[1].buffer_type = MYSQL_TYPE_LONG;
+    params[1].buffer = &end;
+
+    params[2].buffer_type = MYSQL_TYPE_LONG;
+    params[2].buffer = &limit;
+
+    select_stmt.bindParam(params.data());
+    select_stmt.execute();
+
+    auto metadata = select_stmt.resultMetadata();
+
+    mysql::BoundResult<2> result;
+    select_stmt.bindResult(result.data());
 
     vector<pair<int, int>> updates;
-    MYSQL_ROW row;
+    updates.reserve(BATCH_SIZE);
 
-    while ((row = result.fetchRow())) {
-      unsigned long *lengths = result.fetchLengths();
-
-      if (!row[0] || !row[1]) {
-        continue;
-      }
-
-      string moves_blob(row[1], lengths[1]);
+    while (select_stmt.fetch() == 0) {
+      int game_id = stoi(result.get(0));
+      string moves_blob = result.get(1);
 
       auto it =
           find_if(eco_lines.begin(), eco_lines.end(), [&](const auto &eco) {
@@ -51,7 +73,6 @@ void processBatch(mysql::Connection &conn, const string &table,
           });
 
       if (it != eco_lines.end()) {
-        int game_id = atoi(row[0]);
         updates.emplace_back(it->id, game_id);
       }
     }
@@ -60,11 +81,28 @@ void processBatch(mysql::Connection &conn, const string &table,
       return;
     }
 
-    for (const auto &[eco_id, game_id] : updates) {
-      string update_query = format("UPDATE {} SET ecoID = {} WHERE id = {}",
-                                   table, eco_id, game_id);
+    string update_query = "UPDATE `" + table + "` SET ecoID = ? WHERE id = ?";
 
-      conn.query(update_query);
+    auto update_stmt = conn.statement(update_query);
+
+    array<MYSQL_BIND, 2> update_params{};
+
+    int eco_id = 0;
+    int game_id = 0;
+
+    update_params[0].buffer_type = MYSQL_TYPE_LONG;
+    update_params[0].buffer = &eco_id;
+
+    update_params[1].buffer_type = MYSQL_TYPE_LONG;
+    update_params[1].buffer = &game_id;
+
+    update_stmt.bindParam(update_params.data());
+
+    for (const auto &[new_eco_id, new_game_id] : updates) {
+      eco_id = new_eco_id;
+      game_id = new_game_id;
+
+      update_stmt.execute();
     }
 
     total_updated += static_cast<int>(updates.size());
@@ -122,9 +160,8 @@ int main(int argc, const char *argv[]) {
       eco_lines.emplace_back(atoi(row[0]), row[1]);
     }
 
-    string minmax_query = format("SELECT MIN(id), MAX(id) FROM {} "
-                                 "WHERE ecoID IS NULL",
-                                 table);
+    string minmax_query =
+        "SELECT MIN(id), MAX(id) FROM `" + table + "` WHERE ecoID IS NULL";
 
     auto minmax = conn.queryResult(minmax_query);
 

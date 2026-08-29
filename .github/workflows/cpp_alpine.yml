@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     container:
-      image: alpine:latest
+      image: alpine:3.19
 
     steps:
       - name: Install Git
@@ -39,6 +39,12 @@ jobs:
             zlib-dev \
             zstd-dev \
             lz4-dev
+
+      - name: Show toolchain versions
+        run: |
+          cmake --version
+          g++ --version
+          apk --version
 
       - name: Clean build
         run: |

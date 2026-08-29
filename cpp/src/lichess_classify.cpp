@@ -2,14 +2,13 @@
 #include <atomic>
 #include <format>
 #include <iostream>
-#include <memory>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
+#include "MysqlConnection.hpp"
 #include "mysql_settings.hpp"
-#include <mysql/mysql.h>
 
 using namespace std;
 
@@ -23,7 +22,7 @@ struct EcoLine {
   string uci;
 };
 
-void processBatch(MYSQL *conn, const string &table,
+void processBatch(mysql::Connection &conn, const string &table,
                   const vector<EcoLine> &eco_lines, int start_id, int end_id,
                   atomic<int> &total_updated) {
   string query = format("SELECT id, moves_blob FROM {} "
@@ -31,180 +30,140 @@ void processBatch(MYSQL *conn, const string &table,
                         "ORDER BY id ASC LIMIT {}",
                         table, start_id, end_id, BATCH_SIZE);
 
-  if (mysql_query(conn, query.c_str())) {
-    cerr << "Query error: " << mysql_error(conn) << "\n";
-    return;
-  }
+  try {
+    auto result = conn.queryResult(query);
 
-  MYSQL_RES *result = mysql_store_result(conn);
-  if (!result) {
-    cerr << "Store result error: " << mysql_error(conn) << "\n";
-    return;
-  }
+    vector<pair<int, int>> updates;
+    MYSQL_ROW row;
 
-  vector<pair<int, int>> updates;
-  MYSQL_ROW row;
+    while ((row = result.fetchRow())) {
+      unsigned long *lengths = result.fetchLengths();
 
-  while ((row = mysql_fetch_row(result))) {
-    unsigned long *lengths = mysql_fetch_lengths(result);
+      if (!row[0] || !row[1]) {
+        continue;
+      }
 
-    if (!row[0] || !row[1]) {
-      continue;
+      string moves_blob(row[1], lengths[1]);
+
+      auto it =
+          find_if(eco_lines.begin(), eco_lines.end(), [&](const auto &eco) {
+            return moves_blob.rfind(eco.uci, 0) == 0;
+          });
+
+      if (it != eco_lines.end()) {
+        int game_id = atoi(row[0]);
+        updates.emplace_back(it->id, game_id);
+      }
     }
 
-    string moves_blob(row[1], lengths[1]);
-
-    auto it =
-        std::find_if(eco_lines.begin(), eco_lines.end(), [&](const auto &eco) {
-          return moves_blob.rfind(eco.uci, 0) == 0;
-        });
-
-    if (it != eco_lines.end()) {
-      int game_id = atoi(row[0]);
-      updates.emplace_back(it->id, game_id);
+    if (updates.empty()) {
+      return;
     }
-  }
 
-  mysql_free_result(result);
+    for (const auto &[eco_id, game_id] : updates) {
+      string update_query = format("UPDATE {} SET ecoID = {} WHERE id = {}",
+                                   table, eco_id, game_id);
 
-  if (updates.empty()) {
-    return;
-  }
-
-  for (const auto &[eco_id, game_id] : updates) {
-    string update_query = format("UPDATE {} SET ecoID = {} WHERE id = {}",
-                                 table, eco_id, game_id);
-
-    if (mysql_query(conn, update_query.c_str())) {
-      cerr << "Update error: " << mysql_error(conn) << "\n";
+      conn.query(update_query);
     }
-  }
 
-  total_updated += updates.size();
+    total_updated += static_cast<int>(updates.size());
+
+  } catch (const exception &e) {
+    cerr << "Batch error: " << e.what() << '\n';
+  }
 }
 
 void classify_worker(const string &table, const vector<EcoLine> &eco_lines,
                      int start_id, int end_id, atomic<int> &total_updated) {
-  MYSQL *conn = mysql_init(nullptr);
-  if (!conn) {
-    cerr << "mysql_init failed\n";
-    return;
-  }
+  try {
+    mysql::Connection conn(mysql_host, mysql_user, mysql_password, database);
 
-  if (!mysql_real_connect(conn, mysql_host, mysql_user, mysql_password,
-                          database, 0, nullptr, 0)) {
-    cerr << "Connection error: " << mysql_error(conn) << "\n";
-    mysql_close(conn);
-    return;
-  }
+    int last_id = start_id;
 
-  int last_id = start_id;
-  while (last_id < end_id) {
-    processBatch(conn, table, eco_lines, last_id, end_id, total_updated);
-    last_id += BATCH_SIZE;
+    while (last_id < end_id) {
+      processBatch(conn, table, eco_lines, last_id, end_id, total_updated);
+      last_id += BATCH_SIZE;
 
-    if (last_id + BATCH_SIZE > end_id) {
-      last_id = end_id;
+      if (last_id + BATCH_SIZE > end_id) {
+        last_id = end_id;
+      }
     }
-  }
 
-  mysql_close(conn);
+  } catch (const exception &e) {
+    cerr << "Connection error: " << e.what() << '\n';
+  }
 }
 
 int main(int argc, const char *argv[]) {
   string table = "all_games";
-  if (argc > 1)
+
+  if (argc > 1) {
     table = argv[1];
-
-  cout << "Using table: " << table << "\n";
-
-  MYSQL *conn = mysql_init(nullptr);
-  if (!conn)
-    return 1;
-
-  if (!mysql_real_connect(conn, mysql_host, mysql_user, mysql_password,
-                          database, 0, nullptr, 0)) {
-    cerr << mysql_error(conn) << "\n";
-    mysql_close(conn);
-    return 1;
   }
 
-  if (mysql_query(conn, "SELECT id, uci FROM eco WHERE uci IS NOT NULL ORDER "
-                        "BY LENGTH(uci) DESC")) {
-    cerr << mysql_error(conn) << "\n";
-    mysql_close(conn);
-    return 1;
-  }
+  cout << "Using table: " << table << '\n';
 
-  MYSQL_RES *res = mysql_store_result(conn);
-  if (!res) {
-    cerr << mysql_error(conn) << "\n";
-    mysql_close(conn);
-    return 1;
-  }
+  try {
+    mysql::Connection conn(mysql_host, mysql_user, mysql_password, database);
 
-  vector<EcoLine> eco_lines;
-  MYSQL_ROW row;
+    auto res = conn.queryResult("SELECT id, uci FROM eco "
+                                "WHERE uci IS NOT NULL "
+                                "ORDER BY LENGTH(uci) DESC");
 
-  while ((row = mysql_fetch_row(res))) {
-    if (!row[0] || !row[1]) {
-      continue;
+    vector<EcoLine> eco_lines;
+    MYSQL_ROW row;
+
+    while ((row = res.fetchRow())) {
+      if (!row[0] || !row[1]) {
+        continue;
+      }
+
+      eco_lines.emplace_back(atoi(row[0]), row[1]);
     }
-    eco_lines.emplace_back(atoi(row[0]), row[1]);
-  }
 
-  mysql_free_result(res);
+    string minmax_query = format("SELECT MIN(id), MAX(id) FROM {} "
+                                 "WHERE ecoID IS NULL",
+                                 table);
 
-  string minmax_query =
-      format("SELECT MIN(id), MAX(id) FROM {} WHERE ecoID IS NULL", table);
+    auto minmax = conn.queryResult(minmax_query);
 
-  if (mysql_query(conn, minmax_query.c_str())) {
-    cerr << mysql_error(conn) << "\n";
-    mysql_close(conn);
+    int min_id = 0;
+    int max_id = 0;
+
+    if ((row = minmax.fetchRow())) {
+      if (row[0]) {
+        min_id = atoi(row[0]);
+      }
+      if (row[1]) {
+        max_id = atoi(row[1]);
+      }
+    }
+
+    int total_range = max_id - min_id + 1;
+    int chunk_size = (total_range + N_THREADS - 1) / N_THREADS;
+
+    vector<thread> threads;
+    atomic total_updated = 0;
+
+    for (int i = 0; i < N_THREADS; ++i) {
+      int start_id = min_id + i * chunk_size;
+      int end_id = min(start_id + chunk_size - 1, max_id);
+      threads.emplace_back(classify_worker, cref(table), cref(eco_lines),
+                           start_id, end_id + 1, ref(total_updated));
+    }
+
+    for (auto &t : threads) {
+      if (t.joinable()) {
+        t.join();
+      }
+    }
+
+    cout << "Done. Updated: " << total_updated << '\n';
+  } catch (const exception &e) {
+    cerr << "Error: " << e.what() << '\n';
     return 1;
   }
 
-  res = mysql_store_result(conn);
-  if (!res) {
-    cerr << mysql_error(conn) << "\n";
-    mysql_close(conn);
-    return 1;
-  }
-
-  int min_id = 0;
-  int max_id = 0;
-
-  if ((row = mysql_fetch_row(res))) {
-    if (row[0]) {
-      min_id = atoi(row[0]);
-    }
-    if (row[1]) {
-      max_id = atoi(row[1]);
-    }
-  }
-
-  mysql_free_result(res);
-  mysql_close(conn);
-
-  int total_range = max_id - min_id + 1;
-  int chunk_size = (total_range + N_THREADS - 1) / N_THREADS;
-
-  vector<thread> threads;
-  atomic total_updated = 0;
-
-  for (int i = 0; i < N_THREADS; ++i) {
-    int start_id = min_id + i * chunk_size;
-    int end_id = min(start_id + chunk_size - 1, max_id);
-    threads.emplace_back(classify_worker, cref(table), cref(eco_lines),
-                         start_id, end_id + 1, ref(total_updated));
-  }
-
-  for (auto &t : threads) {
-    if (t.joinable()) {
-      t.join();
-    }
-  }
-
-  cout << "Done. Updated: " << total_updated << "\n";
   return 0;
 }

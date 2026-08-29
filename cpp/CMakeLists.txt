@@ -117,6 +117,23 @@ if(NOT EXISTS ${MYSQL_CPP_SOURCE_DIR}/CMakeLists.txt)
     )
 endif()
 
+set(BUILD_JOBS "$ENV{CMAKE_BUILD_PARALLEL_LEVEL}"
+    CACHE STRING "Number of parallel build jobs"
+)
+
+if(NOT BUILD_JOBS)
+    include(ProcessorCount)
+    ProcessorCount(BUILD_JOBS)
+
+    if(NOT BUILD_JOBS OR BUILD_JOBS LESS 1)
+        set(BUILD_JOBS 1)
+    endif()
+endif()
+message(STATUS "Build jobs: ${BUILD_JOBS}")
+
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
 
 add_custom_target(
     mysql_connector_cpp
@@ -139,7 +156,7 @@ add_custom_target(
     COMMAND
         ${CMAKE_COMMAND}
         --build ${MYSQL_CPP_BUILD_DIR}
-        --parallel
+        --parallel ${BUILD_JOBS}
 
     WORKING_DIRECTORY
         ${MYSQL_CPP_SOURCE_DIR}

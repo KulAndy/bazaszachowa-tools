@@ -1,15 +1,20 @@
-#pragma once
+#ifndef MYSQL_CONNECTION_H
+#define MYSQL_CONNECTION_H
 
 #include <mysql/mysql.h>
 
 #include <array>
+#include <cstddef>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace mysql {
+
+using mysql_is_null_t = std::remove_pointer_t<decltype(MYSQL_BIND{}.is_null)>;
 
 struct ConnectionDeleter {
   void operator()(MYSQL *connection) const noexcept {
@@ -69,15 +74,18 @@ private:
 
 template <std::size_t N> class BoundResult {
 public:
+  static constexpr std::size_t BUFFER_SIZE = 1024;
+
   BoundResult() {
     for (std::size_t i = 0; i < N; ++i) {
-      buffers_[i] = new char[1024];
+      buffers_[i] = std::make_unique<char[]>(BUFFER_SIZE);
+
       lengths_[i] = 0;
-      is_null_[i] = false;
+      is_null_[i] = static_cast<mysql_is_null_t>(0);
 
       bind_[i].buffer_type = MYSQL_TYPE_STRING;
-      bind_[i].buffer = buffers_[i];
-      bind_[i].buffer_length = 1024;
+      bind_[i].buffer = buffers_[i].get();
+      bind_[i].buffer_length = BUFFER_SIZE;
       bind_[i].length = &lengths_[i];
       bind_[i].is_null = &is_null_[i];
     }
@@ -89,11 +97,7 @@ public:
   BoundResult(BoundResult &&) = delete;
   BoundResult &operator=(BoundResult &&) = delete;
 
-  ~BoundResult() {
-    for (auto buffer : buffers_) {
-      delete[] buffer;
-    }
-  }
+  ~BoundResult() = default;
 
   MYSQL_BIND *data() noexcept { return bind_.data(); }
 
@@ -104,14 +108,14 @@ public:
       return {};
     }
 
-    return std::string(buffers_[index], lengths_[index]);
+    return std::string(buffers_[index].get(), lengths_[index]);
   }
 
 private:
   std::array<MYSQL_BIND, N> bind_{};
-  std::array<char *, N> buffers_{};
+  std::array<std::unique_ptr<char[]>, N> buffers_{};
   std::array<unsigned long, N> lengths_{};
-  std::array<bool, N> is_null_{};
+  std::array<mysql_is_null_t, N> is_null_{};
 };
 
 class Statement {
@@ -247,3 +251,5 @@ private:
 };
 
 } // namespace mysql
+
+#endif // !MYSQL_CONNECTION_H

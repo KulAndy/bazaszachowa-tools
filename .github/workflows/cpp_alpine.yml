@@ -41,6 +41,11 @@ jobs:
             zstd-dev \
             lz4-dev
 
+      - name: Check MySQL Connector/C++ installation
+        run: |
+          find /usr -name 'libmysqlcppconn.so*' -o -name 'mysqlcppconn*.so*'
+          ldconfig -p 2>/dev/null | grep mysqlcppconn || true
+
       - name: Configure
         run: |
           cmake \

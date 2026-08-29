@@ -32,7 +32,11 @@ jobs:
               gcc \
               gmake \
               mysql84-client \
-              mysql-connector-c
+              boost-libs \
+              liblz4 \
+              protobuf \
+              zstd \
+              libunwind
 
             cmake -S cpp -B cpp/build
             cmake --build cpp/build --parallel 2

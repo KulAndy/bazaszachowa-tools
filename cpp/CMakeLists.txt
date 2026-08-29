@@ -135,57 +135,73 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-add_custom_target(
-    mysql_connector_cpp
-    ALL
+if(WIN32)
+    set(MYSQL_CPP_JDBC_LIBRARY
+        ${MYSQL_CPP_BUILD_DIR}/jdbc/mysqlcppconn.lib
+    )
+elseif(APPLE)
+    set(MYSQL_CPP_JDBC_LIBRARY
+        ${MYSQL_CPP_BUILD_DIR}/jdbc/libmysqlcppconn.dylib
+    )
+else()
+    set(MYSQL_CPP_JDBC_LIBRARY
+        ${MYSQL_CPP_BUILD_DIR}/jdbc/libmysqlcppconn.so
+    )
+endif()
 
-    COMMAND
-        ${CMAKE_COMMAND}
-        -S ${MYSQL_CPP_SOURCE_DIR}
-        -B ${MYSQL_CPP_BUILD_DIR}
 
-        -DWITH_JDBC=ON
-        -DWITH_XPROTOCOL=OFF
-        -DWITH_SSL=system
-        -DWITH_ZLIB=system
-        -DWITH_PROTOBUF=system
-        -DWITH_UNIT_TESTS=OFF
-        -DWITH_ROUTER=OFF
-        -DWITH_TESTS=OFF
-        -DWITH_DOCS=OFF
-        -DWITH_MAN_PAGES=OFF
+if(EXISTS "${MYSQL_CPP_JDBC_LIBRARY}")
+    message(STATUS "MySQL Connector/C++ JDBC library found:")
+    message(STATUS "  ${MYSQL_CPP_JDBC_LIBRARY}")
+    message(STATUS "Skipping MySQL Connector/C++ build")
+else()
+    message(STATUS "MySQL Connector/C++ JDBC library not found:")
+    message(STATUS "  ${MYSQL_CPP_JDBC_LIBRARY}")
+    message(STATUS"Building MySQL Connector/C++")
 
-        -DWITH_MYSQL=${MYSQL_PREFIX}
-        -DMYSQL_INCLUDE_DIR=${MYSQL_INCLUDE_DIR}
-        -DMYSQL_LIB_DIR=${MYSQL_CLIENT_LIBRARY_DIR}
+    add_custom_target(
+        mysql_connector_cpp
+        ALL
 
-        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+        COMMAND
+            ${CMAKE_COMMAND}
+            -S ${MYSQL_CPP_SOURCE_DIR}
+            -B ${MYSQL_CPP_BUILD_DIR}
 
-    COMMAND
-        ${CMAKE_COMMAND}
-        --build ${MYSQL_CPP_BUILD_DIR}
-        --parallel ${BUILD_JOBS}
+            -DWITH_JDBC=ON
+            -DWITH_XPROTOCOL=OFF
+            -DWITH_SSL=system
+            -DWITH_ZLIB=system
+            -DWITH_PROTOBUF=system
+            -DWITH_UNIT_TESTS=OFF
+            -DWITH_ROUTER=OFF
+            -DWITH_TESTS=OFF
+            -DWITH_DOCS=OFF
+            -DWITH_MAN_PAGES=OFF
 
-    WORKING_DIRECTORY
-        ${MYSQL_CPP_SOURCE_DIR}
+            -DWITH_MYSQL=${MYSQL_PREFIX}
+            -DMYSQL_INCLUDE_DIR=${MYSQL_INCLUDE_DIR}
+            -DMYSQL_LIB_DIR=${MYSQL_CLIENT_LIBRARY_DIR}
 
-    COMMENT
-        "Building MySQL Connector/C++ JDBC"
-)
+            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
 
+        COMMAND
+            ${CMAKE_COMMAND}
+            --build ${MYSQL_CPP_BUILD_DIR}
+            --parallel ${BUILD_JOBS}
+
+        WORKING_DIRECTORY
+            ${MYSQL_CPP_SOURCE_DIR}
+
+        COMMENT
+            "Building MySQL Connector/C++ JDBC"
+    )
+
+endif()
 
 set(MYSQL_CPP_INCLUDE_DIR ${MYSQL_CPP_SOURCE_DIR}/include)
 set(MYSQL_CPP_JDBC_INCLUDE_DIR ${MYSQL_CPP_BUILD_DIR}/include/jdbc)
 set(MYSQL_CPP_CPPCONN_INCLUDE_DIR ${MYSQL_CPP_BUILD_DIR}/include/jdbc/cppconn)
-
-if(WIN32)
-    set(MYSQL_CPP_JDBC_LIBRARY ${MYSQL_CPP_BUILD_DIR}/jdbc/mysqlcppconn.lib)
-elseif(APPLE)
-    set(MYSQL_CPP_JDBC_LIBRARY ${MYSQL_CPP_BUILD_DIR}/jdbc/libmysqlcppconn.dylib)
-else()
-    set(MYSQL_CPP_JDBC_LIBRARY ${MYSQL_CPP_BUILD_DIR}/jdbc/libmysqlcppconn.so)
-
-endif()
 
 
 include_directories(
@@ -213,11 +229,14 @@ target_link_libraries(
         ${MYSQL_CLIENT_LIBRARY}
         pthread
 )
+if(TARGET mysql_connector_cpp)
 
-add_dependencies(
-    lichess_classify
-    mysql_connector_cpp
-)
+    add_dependencies(
+        lichess_classify
+        mysql_connector_cpp
+    )
+
+endif()
 
 if(APPLE)
     set_target_properties(

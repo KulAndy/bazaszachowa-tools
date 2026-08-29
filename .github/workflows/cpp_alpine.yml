@@ -32,19 +32,14 @@ jobs:
           apk add --no-cache \
             build-base \
             cmake \
-            linux-headers \
             mariadb-connector-c-dev \
-            openssl-dev \
-            protobuf \
-            protobuf-dev \
-            zlib-dev \
-            zstd-dev \
-            lz4-dev
+            mysql-client \
+            mariadb-connector-c++-dev
 
-      - name: Check MySQL Connector/C++ installation
+      - name: Check MySQL Connector/C++
         run: |
-          find /usr -name 'libmysqlcppconn.so*' -o -name 'mysqlcppconn*.so*'
-          ldconfig -p 2>/dev/null | grep mysqlcppconn || true
+          find /usr -name 'libmysqlcppconn.so*' -o -name 'libmariadbcppconn.so*'
+          find /usr/include -name 'mysql_driver.h' -o -name 'jdbc.h' -o -name 'driver.h'
 
       - name: Configure
         run: |

@@ -33,6 +33,7 @@ jobs:
             build-base \
             cmake \
             linux-headers \
+            mariadb-connector-c-dev \
             openssl-dev \
             zlib-dev \
             zstd-dev \

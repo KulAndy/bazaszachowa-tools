@@ -17,18 +17,14 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
     message(STATUS "Configuring for FreeBSD")
 
+    set(MYSQL_PREFIX /usr/local)
     set(MYSQL_INCLUDE_DIRS
-        /usr/local/include
         /usr/local/include/mysql
+        /usr/local/include
     )
-
     set(MYSQL_LIBRARY_DIRS
         /usr/local/lib/mysql
         /usr/local/lib
-    )
-
-    set(MYSQL_PREFIX
-        /usr/local
     )
 
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -37,23 +33,25 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(EXISTS "/etc/alpine-release")
         message(STATUS "Configuring for Alpine")
 
+        set(MYSQL_PREFIX /usr)
+
         set(MYSQL_INCLUDE_DIRS
-            /usr/include
             /usr/include/mysql
+            /usr/include
         )
 
         set(MYSQL_LIBRARY_DIRS
             /usr/lib
         )
 
-        set(MYSQL_PREFIX
-            /usr
-        )
-
     else()
+        message(STATUS "Configuring for Ubuntu/Debian")
+
+        set(MYSQL_PREFIX /usr)
+
         set(MYSQL_INCLUDE_DIRS
-            /usr/include
             /usr/include/mysql
+            /usr/include
         )
 
         set(MYSQL_LIBRARY_DIRS
@@ -63,27 +61,24 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             /usr/lib/aarch64-linux-gnu
         )
 
-        set(MYSQL_PREFIX
-            /usr
-        )
-
     endif()
 else()
-    message(FATAL_ERROR "Unsupported OS")
+    message(FATAL_ERROR "Unsupported OS: ${CMAKE_SYSTEM_NAME}")
 endif()
 
 find_path(
     MYSQL_INCLUDE_DIR
     NAMES mysql.h
     PATHS ${MYSQL_INCLUDE_DIRS}
+    NO_DEFAULT_PATH
 )
 
 find_library(
     MYSQL_CLIENT_LIBRARY
     NAMES mysqlclient mariadb
     PATHS ${MYSQL_LIBRARY_DIRS}
+    NO_DEFAULT_PATH
 )
-
 
 if(NOT MYSQL_INCLUDE_DIR)
     message(FATAL_ERROR
@@ -92,24 +87,28 @@ if(NOT MYSQL_INCLUDE_DIR)
     )
 endif()
 
-
 if(NOT MYSQL_CLIENT_LIBRARY)
     message(FATAL_ERROR
         "Could not find MySQL C client library "
         "(libmysqlclient or libmariadb). "
         "Install the MySQL/MariaDB development package."
     )
-
 endif()
 
+get_filename_component(
+    MYSQL_CLIENT_LIBRARY_DIR
+    "${MYSQL_CLIENT_LIBRARY}"
+    DIRECTORY
+)
 
 message(STATUS "MySQL C headers: ${MYSQL_INCLUDE_DIR}")
 message(STATUS "MySQL C library: ${MYSQL_CLIENT_LIBRARY}")
+message(STATUS "MySQL C library directory: ${MYSQL_CLIENT_LIBRARY_DIR}")
 
 set(MYSQL_CPP_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/mysql-connector-cpp)
 set(MYSQL_CPP_BUILD_DIR ${MYSQL_CPP_SOURCE_DIR}/build)
 
-if(NOT EXISTS ${MYSQL_CPP_SOURCE_DIR}/CMakeLists.txt)
+if(NOT EXISTS "${MYSQL_CPP_SOURCE_DIR}/CMakeLists.txt")
     message(FATAL_ERROR
         "MySQL Connector/C++ submodule was not found:\n"
         "  ${MYSQL_CPP_SOURCE_DIR}\n"
@@ -129,6 +128,7 @@ if(NOT BUILD_JOBS)
         set(BUILD_JOBS 1)
     endif()
 endif()
+
 message(STATUS "Build jobs: ${BUILD_JOBS}")
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -146,10 +146,18 @@ add_custom_target(
 
         -DWITH_JDBC=ON
         -DWITH_XPROTOCOL=OFF
+        -DWITH_SSL=system
+        -DWITH_ZLIB=system
+        -DWITH_PROTOBUF=system
+        -DWITH_UNIT_TESTS=OFF
+        -DWITH_ROUTER=OFF
+        -DWITH_TESTS=OFF
+        -DWITH_DOCS=OFF
+        -DWITH_MAN_PAGES=OFF
 
         -DWITH_MYSQL=${MYSQL_PREFIX}
         -DMYSQL_INCLUDE_DIR=${MYSQL_INCLUDE_DIR}
-        -DMYSQL_LIB_DIR=${MYSQL_LIBRARY_DIRS}
+        -DMYSQL_LIB_DIR=${MYSQL_CLIENT_LIBRARY_DIR}
 
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
 
@@ -169,7 +177,6 @@ add_custom_target(
 set(MYSQL_CPP_INCLUDE_DIR ${MYSQL_CPP_SOURCE_DIR}/include)
 set(MYSQL_CPP_JDBC_INCLUDE_DIR ${MYSQL_CPP_BUILD_DIR}/include/jdbc)
 set(MYSQL_CPP_CPPCONN_INCLUDE_DIR ${MYSQL_CPP_BUILD_DIR}/include/jdbc/cppconn)
-
 
 if(WIN32)
     set(MYSQL_CPP_JDBC_LIBRARY ${MYSQL_CPP_BUILD_DIR}/jdbc/mysqlcppconn.lib)
@@ -191,7 +198,7 @@ include_directories(
 
 link_directories(
     ${MYSQL_CPP_BUILD_DIR}/jdbc
-    ${MYSQL_LIBRARY_DIRS}
+    ${MYSQL_CLIENT_LIBRARY_DIR}
 )
 
 add_executable(pgn2sql ${SOURCE_DIR}/pgn2sql.cpp)
@@ -199,23 +206,29 @@ add_executable(lichess_classify ${SOURCE_DIR}/lichess_classify.cpp)
 add_executable(remote2pgn ${SOURCE_DIR}/remote2pgn.cpp)
 add_executable(prepare_pgn ${SOURCE_DIR}/prepare_pgn.cpp)
 
-target_link_libraries(lichess_classify PRIVATE
+target_link_libraries(
+    lichess_classify
+    PRIVATE
         ${MYSQL_CPP_JDBC_LIBRARY}
         ${MYSQL_CLIENT_LIBRARY}
         pthread
 )
 
-add_dependencies(lichess_classify mysql_connector_cpp)
+add_dependencies(
+    lichess_classify
+    mysql_connector_cpp
+)
+
 if(APPLE)
     set_target_properties(
         lichess_classify
         PROPERTIES
 
             BUILD_RPATH
-            "${MYSQL_CPP_BUILD_DIR}/jdbc"
+                "${MYSQL_CPP_BUILD_DIR}/jdbc"
 
             INSTALL_RPATH
-            "@loader_path"
+                "@loader_path"
     )
 
 elseif(UNIX)
@@ -224,21 +237,25 @@ elseif(UNIX)
         PROPERTIES
 
             BUILD_RPATH
-            "${MYSQL_CPP_BUILD_DIR}/jdbc"
+                "${MYSQL_CPP_BUILD_DIR}/jdbc"
 
             INSTALL_RPATH
-            "${MYSQL_CPP_BUILD_DIR}/jdbc"
+                "${MYSQL_CPP_BUILD_DIR}/jdbc"
     )
 
 endif()
 
 
-target_link_libraries(remote2pgn PRIVATE
+target_link_libraries(
+    remote2pgn
+    PRIVATE
         ${MYSQL_CLIENT_LIBRARY}
         pthread
 )
 
-target_link_libraries(pgn2sql PRIVATE
+target_link_libraries(
+    pgn2sql
+    PRIVATE
         ${MYSQL_CLIENT_LIBRARY}
         pthread
 )

@@ -31,8 +31,8 @@ jobs:
               cmake \
               gcc \
               gmake \
-              mysql80-client \
-              mysql80-connector-c
+              mysql84-client \
+              mysql84-connector-c
 
             cmake -S cpp -B cpp/build
             cmake --build cpp/build --parallel 2

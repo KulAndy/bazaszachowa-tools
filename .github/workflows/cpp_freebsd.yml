@@ -42,8 +42,9 @@ jobs:
             cmake \
               -S cpp \
               -B cpp/build \
-              -DCMAKE_BUILD_TYPE=Release
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_BUILD_PARALLEL_LEVEL=1
 
             cmake \
               --build cpp/build \
-              --parallel 2
+              --parallel 1

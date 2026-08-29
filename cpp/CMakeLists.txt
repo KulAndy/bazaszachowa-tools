@@ -232,7 +232,6 @@ message(STATUS "Build jobs: ${BUILD_JOBS}")
             -DWITH_XPROTOCOL=OFF
             -DWITH_SSL=system
             -DWITH_ZLIB=system
-            -DWITH_PROTOBUF=system
             -DWITH_UNIT_TESTS=OFF
             -DWITH_ROUTER=OFF
             -DWITH_TESTS=OFF

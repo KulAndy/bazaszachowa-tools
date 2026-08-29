@@ -27,6 +27,11 @@ jobs:
             build-essential \
             cmake \
             libmysqlclient-dev \
+            libprotobuf-dev \
+            protobuf-compiler \
+            liblz4-dev \
+            libzstd-dev \
+            zlib1g-dev \
             clang-format \
             clang-tidy \
             cppcheck

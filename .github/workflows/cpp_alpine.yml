@@ -35,6 +35,8 @@ jobs:
             linux-headers \
             mariadb-connector-c-dev \
             openssl-dev \
+            protobuf \
+            protobuf-dev \
             zlib-dev \
             zstd-dev \
             lz4-dev

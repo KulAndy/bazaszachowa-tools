@@ -32,7 +32,7 @@ jobs:
               gcc \
               gmake \
               mysql84-client \
-              mysql84-connector-c
+              mysql-connector-c
 
             cmake -S cpp -B cpp/build
             cmake --build cpp/build --parallel 2

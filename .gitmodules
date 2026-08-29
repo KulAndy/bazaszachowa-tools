@@ -4,6 +4,3 @@
 [submodule "cpp/chess-library"]
 	path = cpp/chess-library
 	url = https://github.com/Disservin/chess-library.git
-[submodule "cpp/mysql-connector-cpp"]
-	path = cpp/mysql-connector-cpp
-	url = https://github.com/mysql/mysql-connector-cpp.git

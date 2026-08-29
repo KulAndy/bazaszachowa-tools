@@ -26,25 +26,6 @@ jobs:
           release: '14.4'
           run: |
             pkg update
-
-            pkg install -y \
-              cmake \
-              gcc \
-              gmake \
-              mysql84-client \
-              boost-libs \
-              protobuf \
-              libunwind
-
-            rm -rf cpp/build
-            rm -rf cpp/mysql-connector-cpp/build
-
-            cmake \
-              -S cpp \
-              -B cpp/build \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_BUILD_PARALLEL_LEVEL=1
-
-            cmake \
-              --build cpp/build \
-              --parallel 1
+            pkg install -y cmake gcc mysql80-client
+            cmake -S cpp -B cpp/build
+            cmake --build cpp/build --parallel 2

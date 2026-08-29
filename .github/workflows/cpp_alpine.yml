@@ -14,13 +14,9 @@ jobs:
     runs-on: ubuntu-latest
 
     container:
-      image: alpine:3.19
+      image: alpine/git:latest
 
     steps:
-      - name: Install Git
-        run: |
-          apk add --no-cache git
-
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -33,33 +29,10 @@ jobs:
             build-base \
             cmake \
             mariadb-connector-c-dev \
-            openssl-dev \
-            protobuf \
-            protobuf-dev \
-            zlib-dev \
-            zstd-dev \
-            lz4-dev
-
-      - name: Show toolchain versions
-        run: |
-          cmake --version
-          g++ --version
-          apk --version
-
-      - name: Clean build
-        run: |
-          rm -rf cpp/build
-          rm -rf cpp/mysql-connector-cpp/build
+            mysql-client
 
       - name: Configure
-        run: |
-          cmake \
-            -S cpp \
-            -B cpp/build \
-            -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S cpp -B cpp/build
 
       - name: Build
-        run: |
-          cmake \
-            --build cpp/build \
-            --parallel 1
+        run: cmake --build cpp/build --parallel 1

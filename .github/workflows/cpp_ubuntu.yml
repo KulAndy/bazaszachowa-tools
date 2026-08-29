@@ -11,12 +11,6 @@ on:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        connector:
-          - system
-          - submodule
-
     runs-on: ubuntu-latest
 
     steps:
@@ -34,36 +28,8 @@ jobs:
             cmake \
             libmysqlclient-dev
 
-          if [ "${{ matrix.connector }}" = "submodule" ]; then
-            sudo apt-get install -y \
-              libprotobuf-dev \
-              protobuf-compiler \
-              liblz4-dev \
-              libzstd-dev \
-              zlib1g-dev
-          else
-            sudo apt-get install -y \
-              libmysqlcppconn-dev
-          fi
-
-      - name: Check Connector/C++
-        run: |
-          find /usr/include /usr/lib -iname '*mysqlcppconn*' -o -iname 'mysql_driver.h' || true
-
-      - name: Clean build
-        run: |
-          rm -rf cpp/build
-          rm -rf cpp/mysql-connector-cpp/build
-
       - name: Configure
-        run: |
-          cmake \
-            -S cpp \
-            -B cpp/build \
-            -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S cpp -B cpp/build
 
       - name: Build
-        run: |
-          cmake \
-            --build cpp/build \
-            --parallel
+        run: cmake --build cpp/build --parallel

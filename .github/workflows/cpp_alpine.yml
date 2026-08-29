@@ -33,13 +33,17 @@ jobs:
             build-base \
             cmake \
             mariadb-connector-c-dev \
-            mysql-client \
-            mariadb-connector-c++-dev
+            openssl-dev \
+            protobuf \
+            protobuf-dev \
+            zlib-dev \
+            zstd-dev \
+            lz4-dev
 
-      - name: Check MySQL Connector/C++
+      - name: Clean build
         run: |
-          find /usr -name 'libmysqlcppconn.so*' -o -name 'libmariadbcppconn.so*'
-          find /usr/include -name 'mysql_driver.h' -o -name 'jdbc.h' -o -name 'driver.h'
+          rm -rf cpp/build
+          rm -rf cpp/mysql-connector-cpp/build
 
       - name: Configure
         run: |

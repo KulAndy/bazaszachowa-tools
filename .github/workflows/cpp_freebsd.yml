@@ -11,12 +11,6 @@ on:
 
 jobs:
   build-freebsd:
-    strategy:
-      matrix:
-        connector:
-          - system
-          - submodule
-
     runs-on: ubuntu-latest
 
     steps:
@@ -37,18 +31,10 @@ jobs:
               cmake \
               gcc \
               gmake \
-              mysql84-client
-
-            if [ "${{ matrix.connector }}" = "system" ]; then
-              pkg search mysql | grep -i connector || true
-            else
-              pkg install -y \
-                boost-libs \
-                liblz4 \
-                protobuf \
-                zstd \
-                libunwind
-            fi
+              mysql84-client \
+              boost-libs \
+              protobuf \
+              libunwind
 
             rm -rf cpp/build
             rm -rf cpp/mysql-connector-cpp/build

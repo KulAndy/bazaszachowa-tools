@@ -166,6 +166,12 @@ public:
 
   int fetch() { return mysql_stmt_fetch(statement_.get()); }
 
+  void freeResult() {
+    if (mysql_stmt_free_result(statement_.get())) {
+      throwError("MySQL statement free result failed");
+    }
+  }
+
 private:
   StatementPtr statement_;
 

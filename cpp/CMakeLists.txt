@@ -70,6 +70,8 @@ add_executable(pgn2sql ${SOURCE_DIR}/pgn2sql.cpp)
 add_executable(lichess_classify ${SOURCE_DIR}/lichess_classify.cpp)
 add_executable(remote2pgn ${SOURCE_DIR}/remote2pgn.cpp)
 add_executable(prepare_pgn ${SOURCE_DIR}/prepare_pgn.cpp)
+add_executable(extract_positions ${SOURCE_DIR}/extract_positions.cpp)
 
 target_link_libraries(lichess_classify PRIVATE ${MYSQL_LIB} pthread)
 target_link_libraries(remote2pgn PRIVATE ${MYSQL_LIB} pthread)
+target_link_libraries(extract_positions PRIVATE ${MYSQL_LIB} pthread)

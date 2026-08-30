@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -15,7 +16,9 @@
 #include "mysql_settings.hpp"
 
 using namespace std;
-using mysql_is_null_t = std::remove_pointer_t<decltype(MYSQL_BIND{}.is_null)>;
+
+constexpr size_t MAX_MOVES = 20;
+constexpr size_t MAX_HALF_MOVES = MAX_MOVES * 2;
 
 const unsigned int detected_threads = thread::hardware_concurrency();
 const unsigned int N_THREADS = max(2u, detected_threads) - 1;
@@ -35,107 +38,23 @@ struct GameData {
   string movesBlob;
 };
 
-void updateReverseIndex(int gameId, const string &table, uint64_t hash) {
-  mysql::Connection conn(mysql_host, mysql_user, mysql_password, database);
+using GameHashes = unordered_map<uint64_t, int>;
+using BatchHashes = unordered_map<uint64_t, vector<int>>;
 
-  const std::string selectSql = "SELECT UNCOMPRESS(`reverse_index`) "
-                                "FROM `positions` "
-                                "WHERE `games_table` = ? AND `zobrist` = ?";
+GameHashes processGame(GameData &&game) {
+  const int gameId = stoi(game.id);
 
-  auto selectStmt = conn.statement(selectSql);
+  GameHashes result;
 
-  array<MYSQL_BIND, 2> selectParams{};
-
-  selectParams[0].buffer_type = MYSQL_TYPE_STRING;
-  selectParams[0].buffer = const_cast<char *>(table.data());
-  selectParams[0].buffer_length = static_cast<unsigned long>(table.size());
-
-  selectParams[1].buffer_type = MYSQL_TYPE_LONGLONG;
-  selectParams[1].buffer = &hash;
-
-  selectStmt.bindParam(selectParams.data());
-  selectStmt.execute();
-
-  auto metadata = selectStmt.resultMetadata();
-
-  mysql::BoundResult<1> result;
-  selectStmt.bindResult(result.data());
-
-  std::string reverseIndex;
-
-  if (selectStmt.fetch() == 0) {
-    reverseIndex = result.get(0);
-  }
-  selectStmt.freeResult();
-
-  if (gameId < 0) {
-    throw std::invalid_argument("Invalid negative game ID");
-  }
-
-  const size_t byteIndex = static_cast<size_t>(gameId) / 8;
-
-  const unsigned int bitIndex = static_cast<unsigned int>(gameId) % 8;
-
-  if (reverseIndex.size() <= byteIndex) {
-    reverseIndex.resize(byteIndex + 1, '\0');
-  }
-
-  reverseIndex[byteIndex] |= static_cast<char>(1u << bitIndex);
-
-  const std::string insertSql = "INSERT INTO `positions` "
-                                "(`zobrist`, `games_table`, `reverse_index`) "
-                                "VALUES (?, ?, COMPRESS(?)) "
-                                "ON DUPLICATE KEY UPDATE "
-                                "`reverse_index` = COMPRESS(?)";
-
-  auto insertStmt = conn.statement(insertSql);
-
-  array<MYSQL_BIND, 4> params{};
-
-  params[0].buffer_type = MYSQL_TYPE_LONGLONG;
-  params[0].buffer = &hash;
-
-  params[1].buffer_type = MYSQL_TYPE_STRING;
-  params[1].buffer = const_cast<char *>(table.data());
-  params[1].buffer_length = static_cast<unsigned long>(table.size());
-
-  params[2].buffer_type = MYSQL_TYPE_BLOB;
-  params[2].buffer = reverseIndex.data();
-  params[2].buffer_length = static_cast<unsigned long>(reverseIndex.size());
-
-  params[3].buffer_type = MYSQL_TYPE_BLOB;
-  params[3].buffer = reverseIndex.data();
-  params[3].buffer_length = static_cast<unsigned long>(reverseIndex.size());
-
-  insertStmt.bindParam(params.data());
-  insertStmt.execute();
-}
-
-void insertHashes(int gameId, const string &table,
-                  const unordered_set<uint64_t> &hashes) {
-  static RowMutexes<uint64_t> rowMutexes;
-
-  for (uint64_t hash : hashes) {
-    auto mutex = rowMutexes.get(hash);
-
-    std::lock_guard<std::mutex> lock(*mutex);
-
-    updateReverseIndex(gameId, table, hash);
-  }
-}
-
-void processGame(GameData &&game, const string &table) {
-  mysql::Connection conn(mysql_host, mysql_user, mysql_password, database);
-
-  const int gameId = std::stoi(game.id);
-  unordered_set<uint64_t> hashes;
   chess::Board board;
   const string &movesData = game.movesBlob;
-  uint64_t hash = board.zobrist();
 
-  for (size_t i = 0; i + 1 < movesData.size(); i += 2) {
-    std::byte byte1 = static_cast<std::byte>(movesData[i]);
-    std::byte byte2 = static_cast<std::byte>(movesData[i + 1]);
+  const size_t scannedMoves = min(MAX_HALF_MOVES * 2, movesData.size());
+
+  for (size_t i = 0; i + 1 < scannedMoves; i += 2) {
+    byte byte1 = static_cast<byte>(movesData[i]);
+    byte byte2 = static_cast<byte>(movesData[i + 1]);
+
     uint16_t packed =
         (static_cast<uint16_t>(byte1) << 8) | static_cast<uint16_t>(byte2);
 
@@ -150,25 +69,203 @@ void processGame(GameData &&game, const string &table) {
     }
 
     chess::Move move = chess::uci::uciToMove(board, uci);
+
     board.makeMove(move);
-    hash = board.zobrist();
-    hashes.insert(hash);
+
+    result.emplace(board.zobrist(), gameId);
   }
 
-  insertHashes(gameId, table, hashes);
-  const std::string updateSql = "UPDATE `" + table +
-                                "` "
-                                "SET `scanned` = 1 "
-                                "WHERE `id` = ?";
+  return result;
+}
+
+void processBatch(const vector<GameData> &games, const string &table,
+                  mysql::Connection &conn) {
+  BatchHashes hashes;
+
+  for (const auto &game : games) {
+    auto gameHashes = processGame(GameData{game.id, game.movesBlob});
+
+    for (const auto &[hash, gameId] : gameHashes) {
+      hashes[hash].push_back(gameId);
+    }
+  }
+
+  if (hashes.empty()) {
+    return;
+  }
+
+  constexpr size_t HASH_BATCH_SIZE = 100;
+
+  vector<pair<uint64_t, vector<int>>> hashList;
+  hashList.reserve(hashes.size());
+
+  for (auto &[hash, gameIds] : hashes) {
+    hashList.emplace_back(hash, std::move(gameIds));
+  }
+
+  for (size_t offset = 0; offset < hashList.size(); offset += HASH_BATCH_SIZE) {
+    size_t end = min(offset + HASH_BATCH_SIZE, hashList.size());
+
+    string selectSql = "SELECT `zobrist`, UNCOMPRESS(`reverse_index`) "
+                       "FROM `positions` "
+                       "WHERE `games_table` = ? AND `zobrist` IN (";
+
+    for (size_t i = offset; i < end; ++i) {
+      if (i != offset) {
+        selectSql += ",";
+      }
+
+      selectSql += "?";
+    }
+
+    selectSql += ")";
+
+    vector<uint64_t> hashValues;
+    hashValues.reserve(end - offset);
+
+    for (size_t i = offset; i < end; ++i) {
+      hashValues.push_back(hashList[i].first);
+    }
+
+    auto selectStmt = conn.statement(selectSql);
+
+    vector<MYSQL_BIND> selectParams(1 + hashValues.size());
+
+    selectParams[0].buffer_type = MYSQL_TYPE_STRING;
+    selectParams[0].buffer = const_cast<char *>(table.data());
+    selectParams[0].buffer_length = static_cast<unsigned long>(table.size());
+
+    for (size_t i = 0; i < hashValues.size(); ++i) {
+      selectParams[i + 1].buffer_type = MYSQL_TYPE_LONGLONG;
+      selectParams[i + 1].buffer = &hashValues[i];
+    }
+
+    selectStmt.bindParam(selectParams.data());
+    selectStmt.execute();
+
+    auto metadata = selectStmt.resultMetadata();
+
+    mysql::BoundResult<2> result;
+    selectStmt.bindResult(result.data());
+
+    unordered_map<uint64_t, string> existing;
+    existing.reserve(end - offset);
+
+    while (selectStmt.fetch() == 0) {
+      uint64_t hash = stoull(result.get(0));
+      existing.emplace(hash, result.get(1));
+    }
+
+    selectStmt.freeResult();
+
+    string insertSql = "INSERT INTO `positions` "
+                       "(`zobrist`, `games_table`, `reverse_index`) "
+                       "VALUES ";
+
+    vector<uint64_t> insertHashes;
+    vector<string> reverseIndexes;
+
+    insertHashes.reserve(end - offset);
+    reverseIndexes.reserve(end - offset);
+
+    bool first = true;
+
+    for (size_t i = offset; i < end; ++i) {
+      uint64_t hash = hashList[i].first;
+
+      string reverseIndex;
+
+      auto existingIt = existing.find(hash);
+
+      if (existingIt != existing.end()) {
+        reverseIndex = existingIt->second;
+      }
+
+      for (int gameId : hashList[i].second) {
+        if (gameId < 0) {
+          throw invalid_argument("Invalid negative game ID");
+        }
+
+        size_t byteIndex = static_cast<size_t>(gameId) / 8;
+        unsigned int bitIndex = static_cast<unsigned int>(gameId) % 8;
+
+        if (reverseIndex.size() <= byteIndex) {
+          reverseIndex.resize(byteIndex + 1, '\0');
+        }
+
+        reverseIndex[byteIndex] |= static_cast<char>(1u << bitIndex);
+      }
+
+      if (!first) {
+        insertSql += ",";
+      }
+
+      insertSql += "(?, ?, COMPRESS(?))";
+
+      insertHashes.push_back(hash);
+      reverseIndexes.push_back(std::move(reverseIndex));
+
+      first = false;
+    }
+
+    insertSql += " ON DUPLICATE KEY UPDATE "
+                 "`reverse_index` = VALUES(`reverse_index`)";
+
+    vector<MYSQL_BIND> insertParams(insertHashes.size() * 3);
+
+    for (size_t i = 0; i < insertHashes.size(); ++i) {
+      auto &hashParam = insertParams[i * 3];
+      auto &tableParam = insertParams[i * 3 + 1];
+      auto &reverseParam = insertParams[i * 3 + 2];
+
+      hashParam.buffer_type = MYSQL_TYPE_LONGLONG;
+      hashParam.buffer = &insertHashes[i];
+
+      tableParam.buffer_type = MYSQL_TYPE_STRING;
+      tableParam.buffer = const_cast<char *>(table.data());
+      tableParam.buffer_length = static_cast<unsigned long>(table.size());
+
+      reverseParam.buffer_type = MYSQL_TYPE_BLOB;
+      reverseParam.buffer = reverseIndexes[i].data();
+      reverseParam.buffer_length =
+          static_cast<unsigned long>(reverseIndexes[i].size());
+    }
+
+    auto insertStmt = conn.statement(insertSql);
+    insertStmt.bindParam(insertParams.data());
+    insertStmt.execute();
+  }
+
+  string updateSql = "UPDATE `" + table + "` SET `scanned` = 1 WHERE `id` IN (";
+
+  vector<int> gameIds;
+  gameIds.reserve(games.size());
+
+  bool first = true;
+
+  for (const auto &game : games) {
+    if (!first) {
+      updateSql += ",";
+    }
+
+    updateSql += "?";
+    gameIds.push_back(stoi(game.id));
+
+    first = false;
+  }
+
+  updateSql += ")";
 
   auto updateStmt = conn.statement(updateSql);
 
-  array<MYSQL_BIND, 1> params{};
+  vector<MYSQL_BIND> updateParams(gameIds.size());
 
-  params[0].buffer_type = MYSQL_TYPE_LONG;
-  params[0].buffer = const_cast<int *>(&gameId);
+  for (size_t i = 0; i < gameIds.size(); ++i) {
+    updateParams[i].buffer_type = MYSQL_TYPE_LONG;
+    updateParams[i].buffer = &gameIds[i];
+  }
 
-  updateStmt.bindParam(params.data());
+  updateStmt.bindParam(updateParams.data());
   updateStmt.execute();
 }
 
@@ -176,7 +273,7 @@ void processYear(const string &table, const string &year) {
   try {
     mysql::Connection conn(mysql_host, mysql_user, mysql_password, database);
 
-    const int limit = 1000;
+    const int limit = 500;
 
     while (true) {
       const string query = "SELECT `id`, `moves_blob` "
@@ -218,13 +315,13 @@ void processYear(const string &table, const string &year) {
         games.emplace_back(std::move(game));
       }
 
+      stmt.freeResult();
+
       if (games.empty()) {
         break;
       }
 
-      for (auto &game : games) {
-        processGame(std::move(game), table);
-      }
+      processBatch(games, table, conn);
     }
 
   } catch (const exception &e) {

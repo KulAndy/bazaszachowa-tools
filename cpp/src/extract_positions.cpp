@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <chess-library/include/chess.hpp>
 #include <cstddef>
@@ -32,7 +33,7 @@ const array<string, 64> SQUARES = {
 
 const array<string, 7> PIECES = {"p", "n", "b", "r", "q", "k", ""};
 
-struct GameData {
+struct IdAndMove {
   string id;
   string movesBlob;
 };
@@ -40,7 +41,7 @@ struct GameData {
 using GameHashes = unordered_map<uint64_t, int>;
 using BatchHashes = unordered_map<uint64_t, vector<int>>;
 
-GameHashes processGame(GameData game) {
+GameHashes processGame(const IdAndMove &game) {
   const int gameId = stoi(game.id);
 
   GameHashes result;
@@ -78,7 +79,7 @@ GameHashes processGame(GameData game) {
   return result;
 }
 
-void processBatch(const vector<GameData> &games, const string &table,
+void processBatch(const vector<IdAndMove> &games, const string &table,
                   mysql::Connection &conn) {
   BatchHashes hashes;
   hashes.reserve(games.size() * MAX_HALF_MOVES);
@@ -86,9 +87,9 @@ void processBatch(const vector<GameData> &games, const string &table,
   vector<future<GameHashes>> futures;
   futures.reserve(games.size());
 
-  for (const auto &game : games) {
-    futures.emplace_back(async(launch::async, processGame, game));
-  }
+  transform(
+      games.begin(), games.end(), back_inserter(futures),
+      [](const auto &game) { return async(launch::async, processGame, game); });
 
   for (auto &future : futures) {
     auto gameHashes = future.get();
@@ -249,11 +250,11 @@ int main(int argc, const char *argv[]) {
       mysql::BoundResult<2> result;
       stmt.bindResult(result.data());
 
-      vector<GameData> games;
+      vector<IdAndMove> games;
       games.reserve(GAME_BATCH_SIZE);
 
       while (stmt.fetch() == 0) {
-        GameData game;
+        IdAndMove game;
 
         game.id = result.get(0);
         game.movesBlob = result.get(1);

@@ -36,7 +36,7 @@ jobs:
           clang-format \
             --dry-run \
             --Werror \
-            cpp/src/*.cpp
+            cpp/src/*.[ch]pp
 
       - name: Checking sanity
         run: |
@@ -52,7 +52,7 @@ jobs:
       - name: Clang-Tidy
         run: |
           find cpp/src \
-            -type f -name '*.cpp' -print0 |
+            -type f -name '*.[ch]pp' -print0 |
             xargs -0 clang-tidy \
               -p cpp/build \
               --header-filter='^.*cpp/src/.*'

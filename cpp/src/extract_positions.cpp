@@ -1,12 +1,10 @@
 #include <array>
-#include <boost/asio.hpp>
 #include <chess-library/include/chess.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <future>
 #include <iostream>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -81,7 +79,7 @@ GameHashes processGame(GameData game) {
 }
 
 void processBatch(const vector<GameData> &games, const string &table,
-                  mysql::Connection &conn, boost::asio::thread_pool &pool) {
+                  mysql::Connection &conn) {
   BatchHashes hashes;
   hashes.reserve(games.size() * MAX_HALF_MOVES);
 
@@ -89,17 +87,7 @@ void processBatch(const vector<GameData> &games, const string &table,
   futures.reserve(games.size());
 
   for (const auto &game : games) {
-    auto promise = make_shared<std::promise<GameHashes>>();
-
-    futures.emplace_back(promise->get_future());
-
-    boost::asio::post(pool, [promise, game]() mutable {
-      try {
-        promise->set_value(processGame(std::move(game)));
-      } catch (...) {
-        promise->set_exception(current_exception());
-      }
-    });
+    futures.emplace_back(async(launch::async, processGame, game));
   }
 
   for (auto &future : futures) {
@@ -242,8 +230,6 @@ int main(int argc, const char *argv[]) {
   try {
     mysql::Connection conn(mysql_host, mysql_user, mysql_password, database);
 
-    boost::asio::thread_pool pool(N_THREADS);
-
     while (true) {
       string query = "SELECT `id`, `moves_blob` "
                      "FROM `" +
@@ -281,10 +267,8 @@ int main(int argc, const char *argv[]) {
         break;
       }
 
-      processBatch(games, table, conn, pool);
+      processBatch(games, table, conn);
     }
-
-    pool.join();
 
     cout << "All games processed.\n";
 

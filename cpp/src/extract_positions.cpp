@@ -1,10 +1,10 @@
 #include <array>
+#include <boost/asio.hpp>
 #include <chess-library/include/chess.hpp>
 #include <cstddef>
-#include <fstream>
+#include <cstdint>
+#include <future>
 #include <iostream>
-#include <set>
-#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -12,13 +12,14 @@
 #include <vector>
 
 #include "MysqlConnection.hpp"
-#include "RowMutex.hpp"
 #include "mysql_settings.hpp"
 
 using namespace std;
 
 constexpr size_t MAX_MOVES = 20;
 constexpr size_t MAX_HALF_MOVES = MAX_MOVES * 2;
+constexpr size_t GAME_BATCH_SIZE = 1000;
+constexpr size_t HASH_BATCH_SIZE = 500;
 
 const unsigned int detected_threads = thread::hardware_concurrency();
 const unsigned int N_THREADS = max(2u, detected_threads) - 1;
@@ -41,10 +42,11 @@ struct GameData {
 using GameHashes = unordered_map<uint64_t, int>;
 using BatchHashes = unordered_map<uint64_t, vector<int>>;
 
-GameHashes processGame(GameData &&game) {
+GameHashes processGame(GameData game) {
   const int gameId = stoi(game.id);
 
   GameHashes result;
+  result.reserve(MAX_HALF_MOVES);
 
   chess::Board board;
   const string &movesData = game.movesBlob;
@@ -79,161 +81,114 @@ GameHashes processGame(GameData &&game) {
 }
 
 void processBatch(const vector<GameData> &games, const string &table,
-                  mysql::Connection &conn) {
+                  mysql::Connection &conn, boost::asio::thread_pool &pool) {
   BatchHashes hashes;
+  hashes.reserve(games.size() * MAX_HALF_MOVES);
+
+  vector<future<GameHashes>> futures;
+  futures.reserve(games.size());
 
   for (const auto &game : games) {
-    auto gameHashes = processGame(GameData{game.id, game.movesBlob});
+    auto promise = make_shared<std::promise<GameHashes>>();
+
+    futures.emplace_back(promise->get_future());
+
+    boost::asio::post(pool, [promise, game]() mutable {
+      try {
+        promise->set_value(processGame(std::move(game)));
+      } catch (...) {
+        promise->set_exception(current_exception());
+      }
+    });
+  }
+
+  for (auto &future : futures) {
+    auto gameHashes = future.get();
 
     for (const auto &[hash, gameId] : gameHashes) {
       hashes[hash].push_back(gameId);
     }
   }
 
-  if (hashes.empty()) {
-    return;
-  }
+  if (!hashes.empty()) {
+    vector<pair<uint64_t, vector<int>>> hashList;
+    hashList.reserve(hashes.size());
 
-  constexpr size_t HASH_BATCH_SIZE = 100;
-
-  vector<pair<uint64_t, vector<int>>> hashList;
-  hashList.reserve(hashes.size());
-
-  for (auto &[hash, gameIds] : hashes) {
-    hashList.emplace_back(hash, std::move(gameIds));
-  }
-
-  for (size_t offset = 0; offset < hashList.size(); offset += HASH_BATCH_SIZE) {
-    size_t end = min(offset + HASH_BATCH_SIZE, hashList.size());
-
-    string selectSql = "SELECT `zobrist`, UNCOMPRESS(`reverse_index`) "
-                       "FROM `positions` "
-                       "WHERE `games_table` = ? AND `zobrist` IN (";
-
-    for (size_t i = offset; i < end; ++i) {
-      if (i != offset) {
-        selectSql += ",";
-      }
-
-      selectSql += "?";
+    for (auto &[hash, gameIds] : hashes) {
+      hashList.emplace_back(hash, std::move(gameIds));
     }
 
-    selectSql += ")";
+    for (size_t offset = 0; offset < hashList.size();
+         offset += HASH_BATCH_SIZE) {
+      size_t end = min(offset + HASH_BATCH_SIZE, hashList.size());
 
-    vector<uint64_t> hashValues;
-    hashValues.reserve(end - offset);
+      string insertSql = "INSERT INTO `positions` "
+                         "(`zobrist`, `games_table`, `reverse_index`) "
+                         "VALUES ";
 
-    for (size_t i = offset; i < end; ++i) {
-      hashValues.push_back(hashList[i].first);
-    }
+      vector<uint64_t> insertHashes;
+      vector<string> reverseIndexes;
 
-    auto selectStmt = conn.statement(selectSql);
+      insertHashes.reserve(end - offset);
+      reverseIndexes.reserve(end - offset);
 
-    vector<MYSQL_BIND> selectParams(1 + hashValues.size());
+      bool first = true;
 
-    selectParams[0].buffer_type = MYSQL_TYPE_STRING;
-    selectParams[0].buffer = const_cast<char *>(table.data());
-    selectParams[0].buffer_length = static_cast<unsigned long>(table.size());
+      for (size_t i = offset; i < end; ++i) {
+        uint64_t hash = hashList[i].first;
 
-    for (size_t i = 0; i < hashValues.size(); ++i) {
-      selectParams[i + 1].buffer_type = MYSQL_TYPE_LONGLONG;
-      selectParams[i + 1].buffer = &hashValues[i];
-    }
+        string reverseIndex;
 
-    selectStmt.bindParam(selectParams.data());
-    selectStmt.execute();
+        for (int gameId : hashList[i].second) {
+          if (gameId < 0) {
+            throw invalid_argument("Invalid negative game ID");
+          }
 
-    auto metadata = selectStmt.resultMetadata();
+          uint32_t id = static_cast<uint32_t>(gameId);
 
-    mysql::BoundResult<2> result;
-    selectStmt.bindResult(result.data());
-
-    unordered_map<uint64_t, string> existing;
-    existing.reserve(end - offset);
-
-    while (selectStmt.fetch() == 0) {
-      uint64_t hash = stoull(result.get(0));
-      existing.emplace(hash, result.get(1));
-    }
-
-    selectStmt.freeResult();
-
-    string insertSql = "INSERT INTO `positions` "
-                       "(`zobrist`, `games_table`, `reverse_index`) "
-                       "VALUES ";
-
-    vector<uint64_t> insertHashes;
-    vector<string> reverseIndexes;
-
-    insertHashes.reserve(end - offset);
-    reverseIndexes.reserve(end - offset);
-
-    bool first = true;
-
-    for (size_t i = offset; i < end; ++i) {
-      uint64_t hash = hashList[i].first;
-
-      string reverseIndex;
-
-      auto existingIt = existing.find(hash);
-
-      if (existingIt != existing.end()) {
-        reverseIndex = existingIt->second;
-      }
-
-      for (int gameId : hashList[i].second) {
-        if (gameId < 0) {
-          throw invalid_argument("Invalid negative game ID");
+          reverseIndex.append(reinterpret_cast<const char *>(&id), sizeof(id));
         }
 
-        size_t byteIndex = static_cast<size_t>(gameId) / 8;
-        unsigned int bitIndex = static_cast<unsigned int>(gameId) % 8;
-
-        if (reverseIndex.size() <= byteIndex) {
-          reverseIndex.resize(byteIndex + 1, '\0');
+        if (!first) {
+          insertSql += ",";
         }
 
-        reverseIndex[byteIndex] |= static_cast<char>(1u << bitIndex);
+        insertSql += "(?, ?, ?)";
+
+        insertHashes.push_back(hash);
+        reverseIndexes.push_back(std::move(reverseIndex));
+
+        first = false;
       }
 
-      if (!first) {
-        insertSql += ",";
+      insertSql +=
+          " ON DUPLICATE KEY UPDATE "
+          "`reverse_index` = CONCAT(`reverse_index`, VALUES(`reverse_index`))";
+
+      vector<MYSQL_BIND> insertParams(insertHashes.size() * 3);
+
+      for (size_t i = 0; i < insertHashes.size(); ++i) {
+        auto &hashParam = insertParams[i * 3];
+        auto &tableParam = insertParams[i * 3 + 1];
+        auto &reverseParam = insertParams[i * 3 + 2];
+
+        hashParam.buffer_type = MYSQL_TYPE_LONGLONG;
+        hashParam.buffer = &insertHashes[i];
+
+        tableParam.buffer_type = MYSQL_TYPE_STRING;
+        tableParam.buffer = const_cast<char *>(table.data());
+        tableParam.buffer_length = static_cast<unsigned long>(table.size());
+
+        reverseParam.buffer_type = MYSQL_TYPE_BLOB;
+        reverseParam.buffer = reverseIndexes[i].data();
+        reverseParam.buffer_length =
+            static_cast<unsigned long>(reverseIndexes[i].size());
       }
 
-      insertSql += "(?, ?, COMPRESS(?))";
-
-      insertHashes.push_back(hash);
-      reverseIndexes.push_back(std::move(reverseIndex));
-
-      first = false;
+      auto insertStmt = conn.statement(insertSql);
+      insertStmt.bindParam(insertParams.data());
+      insertStmt.execute();
     }
-
-    insertSql += " ON DUPLICATE KEY UPDATE "
-                 "`reverse_index` = VALUES(`reverse_index`)";
-
-    vector<MYSQL_BIND> insertParams(insertHashes.size() * 3);
-
-    for (size_t i = 0; i < insertHashes.size(); ++i) {
-      auto &hashParam = insertParams[i * 3];
-      auto &tableParam = insertParams[i * 3 + 1];
-      auto &reverseParam = insertParams[i * 3 + 2];
-
-      hashParam.buffer_type = MYSQL_TYPE_LONGLONG;
-      hashParam.buffer = &insertHashes[i];
-
-      tableParam.buffer_type = MYSQL_TYPE_STRING;
-      tableParam.buffer = const_cast<char *>(table.data());
-      tableParam.buffer_length = static_cast<unsigned long>(table.size());
-
-      reverseParam.buffer_type = MYSQL_TYPE_BLOB;
-      reverseParam.buffer = reverseIndexes[i].data();
-      reverseParam.buffer_length =
-          static_cast<unsigned long>(reverseIndexes[i].size());
-    }
-
-    auto insertStmt = conn.statement(insertSql);
-    insertStmt.bindParam(insertParams.data());
-    insertStmt.execute();
   }
 
   string updateSql = "UPDATE `" + table + "` SET `scanned` = 1 WHERE `id` IN (";
@@ -269,33 +224,38 @@ void processBatch(const vector<GameData> &games, const string &table,
   updateStmt.execute();
 }
 
-void processYear(const string &table, const string &year) {
+int main(int argc, const char *argv[]) {
+  unordered_set<string> allowed_tables{"all_games", "poland_games"};
+
+  string table = "all_games";
+
+  if (argc > 1) {
+    table = argv[1];
+  }
+
+  if (!allowed_tables.contains(table)) {
+    throw invalid_argument("Invalid table name");
+  }
+
+  cout << "Using table: " << table << '\n';
+
   try {
     mysql::Connection conn(mysql_host, mysql_user, mysql_password, database);
 
-    const int limit = 500;
+    boost::asio::thread_pool pool(N_THREADS);
 
     while (true) {
-      const string query = "SELECT `id`, `moves_blob` "
-                           "FROM `" +
-                           table +
-                           "` "
-                           "WHERE `Year` = ? "
-                           "AND `scanned` = 0 "
-                           "LIMIT " +
-                           to_string(limit);
+      string query = "SELECT `id`, `moves_blob` "
+                     "FROM `" +
+                     table +
+                     "` "
+                     "WHERE `scanned` = 0 "
+                     "ORDER BY `id` "
+                     "LIMIT " +
+                     to_string(GAME_BATCH_SIZE);
 
       auto stmt = conn.statement(query);
 
-      array<MYSQL_BIND, 1> params{};
-
-      string yearValue = year;
-
-      params[0].buffer_type = MYSQL_TYPE_STRING;
-      params[0].buffer = yearValue.data();
-      params[0].buffer_length = static_cast<unsigned long>(yearValue.size());
-
-      stmt.bindParam(params.data());
       stmt.execute();
 
       auto metadata = stmt.resultMetadata();
@@ -304,7 +264,7 @@ void processYear(const string &table, const string &year) {
       stmt.bindResult(result.data());
 
       vector<GameData> games;
-      games.reserve(limit);
+      games.reserve(GAME_BATCH_SIZE);
 
       while (stmt.fetch() == 0) {
         GameData game;
@@ -321,69 +281,10 @@ void processYear(const string &table, const string &year) {
         break;
       }
 
-      processBatch(games, table, conn);
+      processBatch(games, table, conn, pool);
     }
 
-  } catch (const exception &e) {
-    cerr << "Error processing year " << year << ": " << e.what() << '\n';
-  }
-}
-
-int main(int argc, const char *argv[]) {
-  unordered_set<string> allowed_tables{"all_games", "poland_games"};
-  string table = "all_games";
-
-  if (argc > 1) {
-    table = argv[1];
-  }
-
-  if (!allowed_tables.contains(table)) {
-    throw std::invalid_argument("Invalid table name");
-  }
-
-  cout << "Using table: " << table << '\n';
-
-  try {
-    mysql::Connection conn(mysql_host, mysql_user, mysql_password, database);
-
-    string query = "SELECT DISTINCT `Year` "
-                   "FROM `" +
-                   table +
-                   "` "
-                   "WHERE `Year` IS NOT NULL";
-
-    auto result = conn.queryResult(query);
-
-    set<string, less<>> years;
-
-    while (auto row = result.fetchRow()) {
-      if (row[0]) {
-        years.emplace(row[0]);
-      }
-    }
-
-    vector<thread> workers;
-    workers.reserve(N_THREADS);
-
-    for (const auto &year : years) {
-      if (workers.size() >= N_THREADS) {
-        for (auto &t : workers) {
-          if (t.joinable()) {
-            t.join();
-          }
-        }
-
-        workers.clear();
-      }
-
-      workers.emplace_back(processYear, cref(table), cref(year));
-    }
-
-    for (auto &t : workers) {
-      if (t.joinable()) {
-        t.join();
-      }
-    }
+    pool.join();
 
     cout << "All games processed.\n";
 

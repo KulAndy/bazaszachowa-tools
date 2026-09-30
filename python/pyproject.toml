@@ -6,31 +6,23 @@ build-backend = "setuptools.build_meta"
 name = "bazaszachowa-tools"
 version = "1.0.0"
 requires-python = ">=3.12"
-authors = [
-  {name = "Andrzej Kulesza", email = "andykrk22@gmail.com"},
-]
-description = "Tools for maintenance database for bazaszachowa"
 
 dependencies = [
-    "beautifulsoup4==4.15.0",
-    "chess==1.11.2",
-    "mysql-connector-python==26.7.0",
-    "pymongo==4.17.0",
-    "python-dateutil==2.9.0.post0",
-    "requests==2.34.2",
-    "typing_extensions==4.16.0",
-    "Unidecode==1.4.0",
-    "zstandard==0.25.0",
+    "beautifulsoup4>=4.15,<5",
+    "chess>=1.11,<2",
+    "mysql-connector-python>=26.7,<27",
+    "pymongo>=4.17,<5",
+    "python-dateutil>=2.9,<3",
+    "requests>=2.34,<3",
+    "typing_extensions>=4.16,<5",
+    "Unidecode>=1.4,<2",
+    "zstandard>=0.25,<1",
 ]
+
 [project.optional-dependencies]
-dev = [
-    "mypy==2.3.1",
-    "mypy_extensions==1.1.0",
-    "ruff==0.16.3"
-]
-curl_cffi = [
-    "curl_cffi==0.16.0"
-]
+dev = ["mypy>=2.3,<3", "mypy_extensions>=1.1,<2", "ruff>=0.16,<1"]
+
+curl_cffi = ["curl_cffi>=0.16,<1"]
 
 [tool.ruff]
 line-length = 88
@@ -55,11 +47,11 @@ select = [
     "I",   # isort
     "B",   # flake8-bugbear
     "UP",  # pyupgrade
-    "SIM",  # flake8-simplify\
-    "RET",  # flake8-return
+    "SIM", # flake8-simplify\
+    "RET", # flake8-return
 ]
 ignore = [
-    "E501",  # line-too-long (handled by formatter)
+    "E501", # line-too-long (handled by formatter)
 ]
 
 [tool.ruff.format]
@@ -85,7 +77,4 @@ warn_unused_ignores = true
 
 ignore_missing_imports = true
 
-exclude = [
-    "^python/chess_scrappers/",
-]
-
+exclude = ['^chess_scrappers/']
